@@ -75,7 +75,7 @@
 | `app/main.c` | App 主循环：初始化、传感器采集、控制逻辑 |
 | `module/mod_wifi_manager.c` | App 侧 WiFi 管理 |
 | `module/http_server.c` | App 侧 Web 服务器（管理页面） |
-| `board/pin_config.h` | **全部引脚定义**（修改硬件接线需同步这里） |
+| `board/pin_config.h` | **全部引脚定义**（修改硬件设计需同步这里） |
 | `shared/platform_contract.h` | Flash 分区地址等平台常量 |
 
 ### 自定义配置
@@ -97,7 +97,7 @@ ESP_SendCmd("AT+CWSAP=\"QiMingXing\",\"12345678\",1,4", "OK", 800);
 A: 确认当前目标定义正确。Bootloader 目标必须带 `BOOTLOADER_BUILD` 宏，App 目标不能带。若 `app/main.c` 的 `main()` 进了 Bootloader 链接，检查 `.eide/eide.yml` 的 excludeList 是否生效。
 
 **Q: 找不到热点？**
-A: ① 确认只烧了 Bootloader 或升级标志为 DOWNLOADED（否则 Bootloader 会直接跳 App 不开 AP）；② 确认 ESP-01S 供电（PA12 对 AO3401，P-MOS 低电平导通）；③ 确认 PA9→ESP-RX、PA10→ESP-TX 交叉接线且共地。
+A: ① 确认只烧了 Bootloader 或升级标志为 DOWNLOADED（否则 Bootloader 会直接跳 App 不开 AP）；② 确认 ESP-01S 供电正常（PA12 控制 AO3401 为 ESP 供电）。
 
 **Q: 热点连上了但网页 404？**
 A: 重新编译确保包含最新的 `BL_ESP01S_Process()` 解析修复（旧固件的 `+IPD` 解析 bug 会导致 404）。
@@ -142,17 +142,6 @@ Bootloader 每次上电时：
 5. 成功后设备自动重启，Bootloader 检测到有效 App 后跳转运行
 
 > 注意：Bootloader 会在进入升级模式时发送 `AT+RST` 重置 ESP-01S 以清除残留配置，热点约需数秒后出现。
-
-### ESP-01S 接线
-
-| STM32 | ESP-01S |
-|---|---|
-| PA9（USART1_TX） | RX |
-| PA10（USART1_RX） | TX |
-| PA12（P-MOS 控制，低电平导通） | VCC 供电（经 AO3401） |
-| 3.3V | EN/CH_PD 与 3.3V 相连 |
-
-> 供电 MOS 使用 **P 沟道（AO3401）**：PA12 输出低电平 = ESP 供电，高电平 = 断电。若使用 N 沟道 MOS，需反转 `EspUart_SetEnabled()` 逻辑。
 
 ## 更新日志
 
