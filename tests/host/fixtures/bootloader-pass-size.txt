@@ -1,0 +1,2 @@
+Target: Bootloader
+Program Size: Code=3072 RO-data=128 RW-data=32 ZI-data=512

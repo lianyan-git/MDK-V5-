@@ -1,0 +1,33 @@
+# ---- build outputs ----
+build/
+Objects/
+*.o
+*.axf
+*.bin
+*.hex
+*.s19
+*.htm
+*.lnp
+*.map
+*.map.old
+*.map.view
+*.objlist
+*.lock
+*.d
+
+# ---- IDE / toolchain ----
+.vscode/
+.settings/
+*.uvguix.*
+*.uvopt
+*.bak
+.pack/
+.cmsis/
+
+# ---- logs / temp ----
+*.log
+.eide/log
+
+# ---- misc ----
+Thumbs.db
+Desktop.ini

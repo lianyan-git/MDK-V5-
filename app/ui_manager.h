@@ -1,0 +1,26 @@
+#ifndef __UI_MANAGER_H
+#define __UI_MANAGER_H
+
+void UI_ShowBootScreen(void);
+void UI_Update(void);
+void UI_DrawMainScreen(void);
+void UI_DrawWeightScreen(void);
+void UI_DrawTempAdjust(void);
+void UI_DrawTempEdit(void);
+void UI_DrawTempPid(void);
+void UI_DrawTimeAdjust(void);
+void UI_DrawTimeEdit(void);
+void UI_DrawPtcAdjust(void);
+void UI_DrawPtcEdit(void);
+void UI_DrawPtcCoolingEdit(void);
+void UI_DrawPidAutotune(void);
+void UI_DrawMenu(void);
+void UI_DrawMotorAdjust(void);
+void UI_DrawMotorEdit(void);
+void UI_DrawAbout(void);
+void UI_DrawWiFiScreen(void);
+void UI_DrawOTAScreen(void);
+void UI_DrawSafetyAlert(void);
+void UI_UpdateMainDynamic(void);
+
+#endif
