@@ -9,11 +9,12 @@
 #include "board.h"
 #include "stm32f10x.h"
 #include <string.h>
+#include <stdio.h>
 
 static void Delay_ms(uint16_t ms);
 
-#define TFT_WIDTH   135
-#define TFT_HEIGHT  240
+#define TFT_WIDTH   240
+#define TFT_HEIGHT  135
 
 #define COLOR_BLACK     0x0000
 #define COLOR_WHITE     0xFFFF
@@ -128,7 +129,7 @@ void BL_TFT_Init(void) {
 
     // ST7789初始化序列 (精简)
     TFT_Cmd(0x11); Delay_ms(120);
-    TFT_Cmd(0x36); TFT_Data8(0x00);
+    TFT_Cmd(0x36); TFT_Data8(0xA0);   /* 旋转 90°+180°（MX|MV） */
     TFT_Cmd(0x3A); TFT_Data8(0x05);
     TFT_Cmd(0xB2); TFT_Data8(0x0C); TFT_Data8(0x0C); TFT_Data8(0x00); TFT_Data8(0x33); TFT_Data8(0x33);
     TFT_Cmd(0xB7); TFT_Data8(0x35);
@@ -148,8 +149,8 @@ void BL_TFT_Init(void) {
     TFT_Cmd(0x21);
     TFT_Cmd(0x29);
 
-    // 打开背光 (低电平点亮：BLK 为 LED 阴极，拉低接地才亮)
-    GPIO_ResetBits(PIN_TFT_BL_PORT, PIN_TFT_BL_PIN);
+    // 打开背光 (高电平点亮)
+    GPIO_SetBits(PIN_TFT_BL_PORT, PIN_TFT_BL_PIN);
 
     // 清屏
     BL_TFT_Clear(COLOR_BLACK);
@@ -159,11 +160,21 @@ void BL_TFT_Init(void) {
  *  基本绘图
  *═════════════════════════════════════════════════════════════════════════════*/
 
+/* ST7789 1.14寸 135x240（GRAM 240x320）旋转 90°：X=40 / Y=52 */
+#define TFT_X_OFFSET  40
+#define TFT_Y_OFFSET  52
+
 static void TFT_SetWindow(uint16_t x, uint16_t y, uint16_t x1, uint16_t y1) {
     TFT_Cmd(0x2A);
-    TFT_Data8(x>>8); TFT_Data8(x&0xFF); TFT_Data8(x1>>8); TFT_Data8(x1&0xFF);
+    TFT_Data8(((x + TFT_X_OFFSET) >> 8) & 0xFF);
+    TFT_Data8((x + TFT_X_OFFSET) & 0xFF);
+    TFT_Data8(((x1 + TFT_X_OFFSET) >> 8) & 0xFF);
+    TFT_Data8((x1 + TFT_X_OFFSET) & 0xFF);
     TFT_Cmd(0x2B);
-    TFT_Data8(y>>8); TFT_Data8(y&0xFF); TFT_Data8(y1>>8); TFT_Data8(y1&0xFF);
+    TFT_Data8(((y + TFT_Y_OFFSET) >> 8) & 0xFF);
+    TFT_Data8((y + TFT_Y_OFFSET) & 0xFF);
+    TFT_Data8(((y1 + TFT_Y_OFFSET) >> 8) & 0xFF);
+    TFT_Data8((y1 + TFT_Y_OFFSET) & 0xFF);
     TFT_Cmd(0x2C);
 }
 
@@ -307,18 +318,19 @@ void BL_TFT_ShowBootLogo(void) {
 void BL_TFT_ShowUpgradeScreen(void) {
     BL_TFT_Clear(COLOR_BLACK);
 
-    // 标题
+    /* 横屏 240x135 布局 */
+    // 标题栏
     BL_TFT_FillRect(0, 0, TFT_WIDTH, 30, COLOR_DARK);
-    // BL_TFT_DrawString(25, 8, "FIRMWARE", COLOR_WHITE, 2);
+    BL_TFT_DrawString(8, 8, "FIRMWARE UPDATE", COLOR_WHITE, 1);
 
-    // 状态区域
+    // 状态区
     BL_TFT_FillRect(5, 40, TFT_WIDTH-10, 20, COLOR_GRAY);
 
     // 进度条背景
-    BL_TFT_FillRect(10, 100, TFT_WIDTH-20, 20, COLOR_GRAY);
+    BL_TFT_FillRect(10, 75, TFT_WIDTH-20, 20, COLOR_GRAY);
 
-    // IP区域
-    BL_TFT_FillRect(5, 160, TFT_WIDTH-10, 50, COLOR_DARK);
+    // 底部信息区
+    BL_TFT_FillRect(5, 110, TFT_WIDTH-10, 20, COLOR_DARK);
 }
 
 void BL_TFT_ShowStatus(const char *text) {
@@ -327,13 +339,28 @@ void BL_TFT_ShowStatus(const char *text) {
 }
 
 void BL_TFT_ShowAPInfo(const char *ssid, const char *pass, const char *ip) {
-    BL_TFT_FillRect(5, 160, TFT_WIDTH-10, 70, COLOR_BLACK);
-    BL_TFT_DrawString(8, 162, ssid, COLOR_CYAN, 1);
-    BL_TFT_DrawString(8, 175, "PW:", COLOR_YELLOW, 1);
-    BL_TFT_DrawString(30, 175, pass, COLOR_YELLOW, 1);
-    BL_TFT_DrawString(8, 188, "IP:", COLOR_GREEN, 1);
-    BL_TFT_DrawString(30, 188, ip, COLOR_GREEN, 1);
-    BL_TFT_FillRect(5, 235, TFT_WIDTH-10, 2, COLOR_ORANGE);
+    BL_TFT_FillRect(5, 110, TFT_WIDTH-10, 22, COLOR_BLACK);
+    /* 第一行：SSID 在最左，密码在最右 */
+    BL_TFT_DrawString(8, 112, ssid, COLOR_CYAN, 1);
+    {
+        uint16_t pass_len = 0;
+        const char *p = pass;
+        while (*p) { pass_len += 7; p++; }
+        BL_TFT_DrawString(TFT_WIDTH - 8 - pass_len, 112, pass, COLOR_YELLOW, 1);
+    }
+    /* 第二行：IP 居中 */
+    {
+        char buf[32];
+        buf[0] = '\0';
+        /* "IP:xxx" 长度（字符宽 7px） */
+        uint16_t ip_len = 3;
+        const char *p = ip;
+        while (*p) { ip_len += 7; p++; }
+        int x = (TFT_WIDTH - ip_len) / 2;
+        if (x < 0) x = 0;
+        sprintf(buf, "IP:%s", ip);
+        BL_TFT_DrawString((uint16_t)x, 124, buf, COLOR_GREEN, 1);
+    }
 }
 
 void BL_TFT_ShowProgressBar(uint8_t percent) {
@@ -342,14 +369,14 @@ void BL_TFT_ShowProgressBar(uint8_t percent) {
     uint16_t bar_width = ((TFT_WIDTH - 22) * percent) / 100;
 
     // 清除旧进度
-    BL_TFT_FillRect(11, 101, TFT_WIDTH-22, 18, COLOR_GRAY);
+    BL_TFT_FillRect(11, 76, TFT_WIDTH-22, 18, COLOR_GRAY);
     // 画新进度
-    BL_TFT_FillRect(11, 101, bar_width, 18, COLOR_GREEN);
+    BL_TFT_FillRect(11, 76, bar_width, 18, COLOR_GREEN);
 }
 
 void BL_TFT_ShowProgressText(const char *text) {
-    BL_TFT_FillRect(5, 130, TFT_WIDTH-10, 20, COLOR_BLACK);
-    BL_TFT_DrawString(10, 132, text, COLOR_WHITE, 1);
+    BL_TFT_FillRect(5, 98, TFT_WIDTH-10, 12, COLOR_BLACK);
+    BL_TFT_DrawString(10, 98, text, COLOR_WHITE, 1);
 }
 
 void BL_TFT_ShowError(const char *text) {
