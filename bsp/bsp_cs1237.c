@@ -17,7 +17,9 @@ void CS1237_Init(void)
 
 float CS1237_ReadWeight(void)
 {
-    return 0.0f;
+    /* 占位实现：未接入真实称重时返回负值表示不可用，
+     * 主逻辑据此不更新重量显示（避免假 0 重量误导） */
+    return -1.0f;
 }
 
 void CS1237_Tare(void)

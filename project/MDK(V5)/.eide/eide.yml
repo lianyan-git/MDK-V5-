@@ -215,7 +215,7 @@ targets:
             $outputTaskExcludes:
               - .bin
             output-format: elf
-            ro-base: "0x08004800"
+            ro-base: "0x08005000"
             rw-base: "0x20000000"
             xo-base: ""
         scatterFilePath: ""
@@ -453,7 +453,7 @@ targets:
               isChecked: true
               isStartup: true
               mem:
-                size: "0x00004000"
+                size: "0x00004800"
                 startAddr: "0x08000000"
               tag: IROM
             - id: 2

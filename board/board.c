@@ -43,7 +43,7 @@ void Watchdog_Init(void)
 {
     IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
     IWDG_SetPrescaler(IWDG_Prescaler_64);
-    IWDG_SetReload(625U);
+    IWDG_SetReload(2500U);   /* 约 4 秒窗口，给 OTA 刷写/校验留足余量 */
     IWDG_ReloadCounter();
     IWDG_Enable();
 }

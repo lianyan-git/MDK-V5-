@@ -37,6 +37,7 @@ static void read_sensors(void);
 static void safety_check(void);
 static void control_update(void);
 static void update_rgb(void);
+static void trigger_safety(SafetyState_t state);
 #endif
 
 #ifndef BOOTLOADER_BUILD
@@ -90,8 +91,8 @@ int main(void)
     g_sys.drying_active = 0;
     g_sys.chamber_temp_last = 25.0f;
 
-    System_LoadParams();
     Board_Init();
+    Watchdog_Init();   /* App 自启看门狗，不依赖 Bootloader */
 
     AHT20_Init();
     CS1237_Init();
@@ -103,7 +104,11 @@ int main(void)
     Stepper_Init();
 
     W25Q128_SetServiceCallback(Watchdog_Kick);
-    (void)W25Q128_Init();
+    if (W25Q128_Init() != W25Q128_OK) {
+        /* 外部 Flash 初始化失败：保持默认参数 */
+    } else {
+        System_LoadParams();
+    }
 
     UI_ShowBootScreen();
 
@@ -194,11 +199,30 @@ static void read_sensors(void)
 {
     float temp, hum, weight;
     int16_t ptc_raw;
-    if (AHT20_Read(&temp, &hum) == 0) { g_sys.current_temp = temp; g_sys.current_humidity = hum; }
+
+    /* AHT20 读取失败：保持上次温度，但若正在烘干则触发安全保护，
+     * 避免"传感器假 25°C → 永远认为没到温 → 持续加热"的致命场景 */
+    if (AHT20_Read(&temp, &hum) != 0) {
+        if (g_sys.drying_active && g_sys.safety_state == SAFETY_NONE) {
+            trigger_safety(SAFETY_BOX_BROKEN);
+        }
+    } else {
+        g_sys.current_temp = temp;
+        g_sys.current_humidity = hum;
+    }
+
     weight = CS1237_ReadWeight();
     if (weight >= 0.0f) g_sys.weight_g = weight;
+
     ptc_raw = NTC_GetTemperature();
     g_sys.ptc_temp = (float)ptc_raw / 10.0f;
+
+    /* NTC 开路/短路异常（映射到极端值）也触发安全保护 */
+    if (ptc_raw <= -100 || ptc_raw >= 2000) {
+        if (g_sys.drying_active && g_sys.safety_state == SAFETY_NONE) {
+            trigger_safety(SAFETY_BOX_BROKEN);
+        }
+    }
 }
 
 static void update_rgb(void)
@@ -258,17 +282,14 @@ void StopDrying(void)
 
 static void safety_check(void)
 {
-    static uint32_t stuck_window_start = 0;
-    static float stuck_window_temp = 0.0f;
     uint32_t now = SystemTime_Millis();
     if (g_sys.safety_state != SAFETY_NONE || !g_sys.drying_active) return;
     if (g_sys.run_state != STATE_HEATING && g_sys.run_state != STATE_DRYING) return;
     if (g_sys.chamber_temp_last - g_sys.current_temp > SAFETY_DROP_THRESHOLD) { trigger_safety(SAFETY_BOX_BROKEN); return; }
-    if (stuck_window_start == 0) { stuck_window_start = now; stuck_window_temp = g_sys.current_temp; }
-    if ((int32_t)(now - stuck_window_start) >= (int32_t)(SAFETY_STUCK_MINUTES * 60000)) {
-        if (g_sys.current_temp - stuck_window_temp < 1.0f) { trigger_safety(SAFETY_LID_OPEN); return; }
-        stuck_window_start = now;
-        stuck_window_temp = g_sys.current_temp;
+    if (g_sys.temp_stuck_start == 0) { g_sys.temp_stuck_start = now; }
+    if ((int32_t)(now - g_sys.temp_stuck_start) >= (int32_t)(SAFETY_STUCK_MINUTES * 60000)) {
+        if (g_sys.current_temp - g_sys.chamber_temp_last < 1.0f) { trigger_safety(SAFETY_LID_OPEN); return; }
+        g_sys.temp_stuck_start = now;
     }
     g_sys.chamber_temp_last = g_sys.current_temp;
 }
@@ -276,6 +297,7 @@ static void safety_check(void)
 static void update_fan_for_ptc(void)
 {
     static float last_ptc = 0.0f;
+    if (g_sys.ptc_temp <= 0.0f) { last_ptc = g_sys.ptc_temp; return; }  /* 传感器异常不调风 */
     float delta = last_ptc - g_sys.ptc_temp;
     if (delta > 1.0f) { if (Fan_GetSpeed() > FAN_MIN_SPEED) Fan_AdjustSpeed(-5); }
     else if (g_sys.ptc_temp > (float)(g_sys.params.ptc_max_temp + 2)) Fan_AdjustSpeed(5);
@@ -286,19 +308,38 @@ static void control_update(void)
 {
     float target = (float)g_sys.params.target_temp;
     static uint8_t heater_on = 0;
+    static uint32_t last_tick = 0;
+    uint32_t now = SystemTime_Millis();
+
+    /* 独立硬过温保护：PTC 温度超限立即切断加热，不依赖控制状态 */
+    if (NTC_IsOverTemp()) {
+        PTC_SetPower(0);
+        trigger_safety(SAFETY_BOX_BROKEN);
+        return;
+    }
+
     if (g_sys.safety_state != SAFETY_NONE) { PTC_SetPower(0); return; }
-    if (!g_sys.drying_active) return;
+
     switch (g_sys.run_state) {
     case STATE_HEATING:
         if (g_sys.current_temp < target - 1.0f) PTC_SetPower(100);
-        else if (g_sys.current_temp >= target) { PTC_SetPower(0); g_sys.run_state = STATE_DRYING; }
+        else if (g_sys.current_temp >= target) { PTC_SetPower(0); g_sys.run_state = STATE_DRYING; last_tick = now; }
         break;
     case STATE_DRYING:
         if (g_sys.current_temp < target - 1.0f) { if (!heater_on) { PTC_SetPower(100); heater_on = 1; } }
         else if (g_sys.current_temp >= target + 0.5f) { if (heater_on) { PTC_SetPower(0); heater_on = 0; } }
         update_fan_for_ptc();
-        if (g_sys.remaining_sec > 0) g_sys.remaining_sec--;
-        else { StopDrying(); heater_on = 0; }
+        /* 每 200ms 调用一次，累计满 1 秒才减 1 秒（修复 5 倍速倒计时） */
+        if (last_tick == 0) last_tick = now;
+        if ((int32_t)(now - last_tick) >= (int32_t)1000) {
+            last_tick = now;
+            if (g_sys.remaining_sec > 0) {
+                g_sys.remaining_sec--;
+            } else {
+                StopDrying();
+                heater_on = 0;
+            }
+        }
         break;
     case STATE_COOLING:
         Fan_SetSpeed(100);

@@ -2,6 +2,16 @@
 
 基于 STM32F103C8T6 + ESP-01S 的烘干箱固件，含 **Bootloader（OTA 升级）** 与 **App（烘干控制）** 两部分。
 
+## 项目特性
+
+- 🔥 **PTC 烘干控制**：PTC 加热 + 温度控制 + 过温保护 + PID 自整定
+- 📦 **OTA 无线升级**：ESP-01S AP 模式 + 网页上传固件，无需数据线
+- 🖥️ **1.14 寸 TFT 屏幕**：显示升级状态、AP 信息、进度条
+- 📶 **Web 管理页面**：上传固件、查看状态
+- 💾 **外部 Flash（W25Q128）**：固件暂存、参数持久化
+- 🎛️ **多传感器**：温湿度（AHT20）、称重（CS1237）、NTC 温度检测
+- ⚙️ **电机控制**：步进电机（连续/摆动模式）
+
 ## 目录结构
 
 ```
@@ -19,9 +29,10 @@
 
 | 区间 | 地址 | 大小 | 说明 |
 |---|---|---|---|
-| Bootloader | `0x08000000` | 16 KB | OTA 引导 + AP 升级入口 |
-| 升级标志 | `0x08004000` | 2 KB | 升级请求标志 |
-| App | `0x08004800` | 46 KB | 烘干控制固件 |
+| Bootloader | `0x08000000` | 18 KB | OTA 引导 + AP 升级入口 |
+| 升级标志 | `0x08004800` | 1 KB | 升级请求标志 |
+| WiFi 配置 | `0x08004C00` | 1 KB | WiFi 参数存储 |
+| App | `0x08005000` | 44 KB | 烘干控制固件 |
 
 ## 编译
 
@@ -112,11 +123,11 @@ A: 检查是否有 SPI/延时死循环未喂狗。若使用独立屏幕/Flash �
 | 文件 | 地址 |
 |---|---|
 | `dryer_bootloader.bin` | `0x08000000` |
-| `dryer_app.bin` | `0x08004800` |
+| `dryer_app.bin` | `0x08005000` |
 
 烧录时务必确认：
-- Bootloader 大小 ≤ 16 KB
-- 两个文件地址不重叠（Bootloader 到 `0x08003FFF`，标志区 `0x08004000-0x080047FF`，App 从 `0x08004800` 起）
+- Bootloader 大小 ≤ 18 KB
+- 两个文件地址不重叠（Bootloader 到 `0x08004FFF`，标志区 `0x08005000` 前）
 
 ## OTA 升级流程
 
@@ -133,22 +144,28 @@ Bootloader 每次上电时：
 - **首次烧录**（只有 Bootloader、没有 App）→ 自动进入升级模式
 - **App 内升级**：在 App 的 Web 管理页面点击"固件升级"→ 写入升级标志并复位 → 进入升级模式
 
-### 连接并上传固件
+### 连接并上传固件（两阶段）
 
+**阶段 1 — 下载到外部 Flash**
 1. 手机/电脑搜索 WiFi 热点 **`QiMingXing`**（密码 **`12345678`**）
 2. 连接后浏览器访问 **`http://192.168.4.1`**
 3. 选择 `.bin` 固件文件，点击 **UPLOAD & UPDATE**
-4. 固件上传到外部 Flash（W25Q128）暂存 → 校验 CRC 与向量表 → 刷入 App 分区
-5. 成功后设备自动重启，Bootloader 检测到有效 App 后跳转运行
+4. 固件上传到外部 Flash（W25Q128）暂存，屏幕显示下载进度
+5. 校验 CRC 后写入升级标志并自动重启
 
-> 注意：Bootloader 会在进入升级模式时发送 `AT+RST` 重置 ESP-01S 以清除残留配置，热点约需数秒后出现。
+**阶段 2 — 拷贝到单片机**
+6. 重启后 Bootloader 检测到升级标志，显示 "WRITE TO MCU" + 拷贝进度
+7. 从外部 Flash 刷入 App 分区并校验
+8. 完成后清标志并重启，跳转运行新 App
+
+> 注意：Bootloader 进入升级模式后开 AP（`QiMingXing`），热点约数秒后出现。
 
 ## 更新日志
 
 ### 2026-08-16
 
 #### 新增
-- Bootloader 完整 OTA 升级链路：ESP01S AP 模式 + Web 网页上传固件
+- Bootloader 完整 OTA 升级链路：ESP01S AP 模式 + Web 网页上传固件（两阶段：下载到外部 Flash → 拷贝到 App 分区）
 - 上传固件暂存外部 Flash（W25Q128）→ 校验（CRC32 + 向量表）→ 刷入 App 分区
 - App 端 Web 页面"固件升级"按钮：写入升级标志并复位跳转 Bootloader
 - `bl_tft.c` 增加真实 5×7 点阵字体，屏幕可显示 AP 名称/密码/IP/升级进度
@@ -158,17 +175,28 @@ Bootloader 每次上电时：
 - **修复 `ESP_WaitResponse` / `BL_ESP01S_Process` 的 RX 读取逻辑反转 bug**（`EspUart_ReadByte` 返回 1=有字节，原代码写成 `==0`，导致 ESP 回复的每个字节都被丢弃、AT 握手永远失败）
 - **修复固件上传 256 字节缓冲索引回绕 bug**（`fw_buf_idx` 从 `uint8_t` 改为 `uint16_t`，原 255+1 回绕导致 `flush_fw_buffer()` 永不触发、固件无法写入 Flash）
 - **修复 HTTP multipart/form-data 未剥离 bug**（新增 `feed_fw_byte()` 解析 boundary，只把真实固件数据写入 Flash）
-- **修复 ESP `+IPD,id,len:` 分片前缀被当固件数据写入的问题**（数据模式中探测并跳过前缀）
-- 修复 ESP 残留 STA 配置导致的热点延迟出现问题（进入升级模式时 `AT+RST` 重置 ESP）
+- **修复 ESP `+IPD,id,len:` 分片前缀被当固件数据写入的问题**（按分片模型解析）
+- **修复 `Content-Length` 解析**：改为流式检测（大小写不敏感），容忍 ESP 调试输出（`_STA_IP:`/`RECV`/`send ok` 等）穿插
+- 修复 ESP 残留 STA 配置导致的热点延迟问题（移除 `AT+RST`，上电只初始化一次，AP 更快广播）
 - 修复 WS2812 时序错误（改用 SysTick 精确周期延时，符合 800kHz 协议）
 - 修复 TFT 背光初始化缺失 `GPIOB` 时钟导致背光无法点亮
 - 修复 TFT SPI 分频过高（36MHz→9MHz）、SPI 收发无超时导致看门狗复位
 - 修复 `bl_tft.c` `Delay_ms` 不喂狗导致的复位循环
 - `EspUart_Init` 不再在初始化时切换 ESP 电源，避免复位抖动
 - `EspUart_SetEnabled` 适配 P 沟道 MOS（AO3401）低电平导通逻辑
+- **App：AHT20 假驱动改为真实软件 I2C 驱动**（原固定返回 25°C/50%，会导致加热器持续全功率）
+- **App：PTC 过温保护接入主控制链**（`NTC_IsOverTemp` 超 85°C 立即切断加热）
+- **App：修复烘干倒计时快 5 倍**（200ms 控制周期累计满 1 秒才递减）
+- **App：修复冷却状态进不去**（`if(!drying_active) return` 挡住 STATE_COOLING）
+- **App：参数读取移到 Flash 初始化后** + 参数语义范围校验 + 保留字节清零 + 写入检查
+- **App：NTC ADC 读取加超时保护**（防外设异常卡死主循环）
+- **App：PTC PID 自整定峰值检测修复**（上升/下降沿跟踪）
+- **App：步进电机摆动模式修复**（启动电机）+ 长距离步数支持（int32_t）
 
 #### 变更
 - Bootloader 入口切换为 V2 引导（ESP AP 升级），移除 V1 引导文件
-- OTA 上传协议改为先存外部 Flash 再刷入，支持校验后写入
+- OTA 上传协议改为两阶段（下载到外部 Flash → 重启 → 拷贝到 App），支持校验后写入
+- **Flash 分区调整**：Bootloader 16KB→18KB，App 地址 `0x08004800`→`0x08005000`，大小 44KB
 - 热点名称 `QiMingXing`，密码 `12345678`
 - 屏幕 UI 按横屏（240×135）重新布局：标题栏 / 状态区 / 进度条 / AP 信息（SSID 左、密码右、IP 居中）
+- 屏幕文字居中显示（除 WiFi 名称、密码），标题彩色分段 "lianyan & -E-"

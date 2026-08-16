@@ -56,6 +56,19 @@ void System_Init(void)
     System_LoadParams();
 }
 
+/* 参数语义范围校验：损坏/越界参数直接拒绝，使用默认值 */
+static int params_valid(const SystemParams_t *p)
+{
+    if (p->target_temp < TEMP_MIN || p->target_temp > TEMP_MAX) return 0;
+    if (p->dry_time_sec == 0 || p->dry_time_sec > TIME_MAX_SEC) return 0;
+    if (p->ptc_max_temp < PTC_TEMP_MIN || p->ptc_max_temp > PTC_TEMP_MAX) return 0;
+    if (p->ptc_cooling_temp >= p->ptc_max_temp) return 0;
+    if (p->pid_kp < 0.0f || p->pid_kp > 100.0f) return 0;
+    if (p->pid_ki < 0.0f || p->pid_ki > 100.0f) return 0;
+    if (p->pid_kd < 0.0f || p->pid_kd > 100.0f) return 0;
+    return 1;
+}
+
 void System_LoadParams(void)
 {
     SystemParams_t params;
@@ -66,7 +79,8 @@ void System_LoadParams(void)
     }
     memcpy(&params, raw, sizeof(SystemParams_t));
 
-    if (params.magic == PARAM_MAGIC && calc_checksum(&params) == params.checksum) {
+    if (params.magic == PARAM_MAGIC && calc_checksum(&params) == params.checksum
+        && params_valid(&params)) {
         g_sys.params.target_temp = params.target_temp;
         g_sys.params.dry_time_sec = params.dry_time_sec;
         g_sys.params.ptc_max_temp = params.ptc_max_temp;
@@ -91,6 +105,8 @@ void System_SaveParams(void)
     SystemParams_t params;
     uint8_t raw[sizeof(SystemParams_t)];
 
+    memset(&params, 0, sizeof(params));   /* 保留字节清零，避免写入不确定内容 */
+
     params.magic = PARAM_MAGIC;
     params.target_temp = g_sys.params.target_temp;
     params.dry_time_sec = g_sys.params.dry_time_sec;
@@ -112,8 +128,17 @@ void System_SaveParams(void)
 
     memcpy(raw, &params, sizeof(SystemParams_t));
 
-    W25Q128_EraseSector(PARAM_EXT_ADDR);
-    W25Q128_Write(PARAM_EXT_ADDR, raw, sizeof(SystemParams_t));
+    /* 先擦除再写，检查两者是否成功 */
+    if (W25Q128_EraseSector(PARAM_EXT_ADDR) != W25Q128_OK) return;
+    if (W25Q128_Write(PARAM_EXT_ADDR, raw, sizeof(SystemParams_t)) != W25Q128_OK) return;
+
+    /* read-back 验证 */
+    uint8_t verify[sizeof(SystemParams_t)];
+    if (W25Q128_Read(PARAM_EXT_ADDR, verify, sizeof(SystemParams_t)) == W25Q128_OK) {
+        if (memcmp(verify, raw, sizeof(SystemParams_t)) != 0) {
+            /* 写入不一致，可重试一次 */
+        }
+    }
 }
 
 void System_TickHandler(void)

@@ -7,6 +7,7 @@
 #include "bl_tft.h"
 #include "pin_config.h"
 #include "board.h"
+#include "bsp_spi1_bus.h"
 #include "stm32f10x.h"
 #include <string.h>
 #include <stdio.h>
@@ -16,41 +17,21 @@ static void Delay_ms(uint16_t ms);
 #define TFT_WIDTH   240
 #define TFT_HEIGHT  135
 
-#define COLOR_BLACK     0x0000
-#define COLOR_WHITE     0xFFFF
-#define COLOR_RED       0xF800
-#define COLOR_GREEN     0x07E0
-#define COLOR_BLUE      0x001F
-#define COLOR_YELLOW    0xFFE0
-#define COLOR_CYAN      0x07FF
-#define COLOR_GRAY      0x8410
-#define COLOR_DARK      0x4208
-#define COLOR_ORANGE    0xFC00
-
 /*═════════════════════════════════════════════════════════════════════════════
- *  SPI底层 (与W25Q128共享SPI1)
+ *  SPI底层 (与W25Q128共享SPI1，走 Spi1Bus 避免总线冲突)
  *═════════════════════════════════════════════════════════════════════════════*/
 
 static void SPI1_Send(uint8_t byte) {
-    volatile uint32_t guard = 0;
-    while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {
-        if (++guard > 500000U) return;   /* 超时保护，避免看门狗复位 */
-    }
-    SPI_I2S_SendData(SPI1, byte);
-    guard = 0;
-    while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {
-        if (++guard > 500000U) return;   /* 超时保护，避免看门狗复位 */
-    }
-    (void)SPI_I2S_ReceiveData(SPI1);
+    Spi1Bus_Transfer(&byte, 0, 1, 100);
 }
 
 static void TFT_Select(void) {
-    GPIO_SetBits(PIN_W25Q128_CS_PORT, PIN_W25Q128_CS_PIN);   // 关闭Flash
-    GPIO_ResetBits(PIN_TFT_CS_PORT, PIN_TFT_CS_PIN);           // 选中TFT
+    Spi1Bus_Acquire(SPI1_BUS_OWNER_TFT, 0);
+    Spi1Bus_Select(SPI1_BUS_OWNER_TFT);
 }
 
 static void TFT_Release(void) {
-    GPIO_SetBits(PIN_TFT_CS_PORT, PIN_TFT_CS_PIN);
+    Spi1Bus_Release(SPI1_BUS_OWNER_TFT);
 }
 
 static void TFT_Cmd(uint8_t cmd) {
@@ -107,19 +88,8 @@ void BL_TFT_Init(void) {
     GPIO_InitStruct.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(PIN_TFT_BL_PORT, &GPIO_InitStruct);
 
-    // 初始化SPI1
-    SPI_InitTypeDef SPI_InitStruct;
-    SPI_InitStruct.SPI_Direction = SPI_Direction_2Lines_FullDuplex;
-    SPI_InitStruct.SPI_Mode = SPI_Mode_Master;
-    SPI_InitStruct.SPI_DataSize = SPI_DataSize_8b;
-    SPI_InitStruct.SPI_CPOL = SPI_CPOL_Low;
-    SPI_InitStruct.SPI_CPHA = SPI_CPHA_1Edge;
-    SPI_InitStruct.SPI_NSS = SPI_NSS_Soft;
-    SPI_InitStruct.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_8;  /* 72M/8=9MHz，稳妥 */
-    SPI_InitStruct.SPI_FirstBit = SPI_FirstBit_MSB;
-    SPI_InitStruct.SPI_CRCPolynomial = 7;
-    SPI_Init(SPI1, &SPI_InitStruct);
-    SPI_Cmd(SPI1, ENABLE);
+    /* 注意：不再重新初始化 SPI1（Spi1Bus_Init 已配置，且与 W25Q128 共用）。
+     * 若在此 SPI_Init 会覆盖 W25Q128 的分频配置，导致 Flash 读写失败。 */
 
     // 硬件复位
     GPIO_ResetBits(PIN_TFT_RES_PORT, PIN_TFT_RES_PIN);
@@ -315,13 +285,45 @@ void BL_TFT_ShowBootLogo(void) {
     Delay_ms(500);
 }
 
+/* 在屏幕水平居中绘制文字 */
+static void tft_draw_center(uint16_t y, const char *str, uint16_t color, uint8_t size)
+{
+    uint16_t w = 0;
+    const char *p = str;
+    while (*p) { w += 7 * size; p++; }
+    int16_t x = (TFT_WIDTH - w) / 2;
+    if (x < 0) x = 0;
+    BL_TFT_DrawString((uint16_t)x, y, str, color, size);
+}
+
+void BL_TFT_DrawCentered(uint16_t y, const char *str, uint16_t color, uint8_t size)
+{
+    tft_draw_center(y, str, color, size);
+}
+
 void BL_TFT_ShowUpgradeScreen(void) {
     BL_TFT_Clear(COLOR_BLACK);
 
     /* 横屏 240x135 布局 */
-    // 标题栏
-    BL_TFT_FillRect(0, 0, TFT_WIDTH, 30, COLOR_DARK);
-    BL_TFT_DrawString(8, 8, "FIRMWARE UPDATE", COLOR_WHITE, 1);
+    // 标题栏：分段彩色大字 "lianyan & -E-"（size=2，整体水平居中，垂直居中 y=8）
+    {
+        int x;
+        int y = 8;                 /* 字高14px，标题栏30px，(30-14)/2=8 */
+        int total = 7 * 13 + 13 + 13 + 13 + 3 * 13;   /* 91+13+13+13+39=169 */
+        x = (TFT_WIDTH - total) / 2;
+        if (x < 0) x = 0;
+
+        BL_TFT_FillRect(0, 0, TFT_WIDTH, 30, COLOR_TITLE_BG);
+        BL_TFT_DrawString(x, y, "lianyan", COLOR_CYAN, 2);
+        x += 7 * 13;
+        BL_TFT_DrawString(x, y, " ", COLOR_WHITE, 2);
+        x += 13;
+        BL_TFT_DrawString(x, y, "&", COLOR_YELLOW, 2);
+        x += 13;
+        BL_TFT_DrawString(x, y, " ", COLOR_WHITE, 2);
+        x += 13;
+        BL_TFT_DrawString(x, y, "-E-", COLOR_MAGENTA, 2);
+    }
 
     // 状态区
     BL_TFT_FillRect(5, 40, TFT_WIDTH-10, 20, COLOR_GRAY);
@@ -334,21 +336,21 @@ void BL_TFT_ShowUpgradeScreen(void) {
 }
 
 void BL_TFT_ShowStatus(const char *text) {
-    BL_TFT_FillRect(5, 40, TFT_WIDTH-10, 20, COLOR_BLACK);
-    BL_TFT_DrawString(8, 42, text, COLOR_WHITE, 1);
+    BL_TFT_FillRect(0, 38, TFT_WIDTH, 24, COLOR_BLACK);   /* 全宽清除，避免大字残骸 */
+    tft_draw_center(42, text, COLOR_WHITE, 2);   /* 大字提示，垂直居中 */
 }
 
 void BL_TFT_ShowAPInfo(const char *ssid, const char *pass, const char *ip) {
     BL_TFT_FillRect(5, 110, TFT_WIDTH-10, 22, COLOR_BLACK);
-    /* 第一行：SSID 在最左，密码在最右 */
-    BL_TFT_DrawString(8, 112, ssid, COLOR_CYAN, 1);
+    /* 第一行：SSID 在最左（红色），密码在最右（蓝色） */
+    BL_TFT_DrawString(8, 112, ssid, COLOR_RED, 1);
     {
         uint16_t pass_len = 0;
         const char *p = pass;
         while (*p) { pass_len += 7; p++; }
-        BL_TFT_DrawString(TFT_WIDTH - 8 - pass_len, 112, pass, COLOR_YELLOW, 1);
+        BL_TFT_DrawString(TFT_WIDTH - 8 - pass_len, 112, pass, COLOR_BLUE, 1);
     }
-    /* 第二行：IP 居中 */
+    /* 第二行：IP 居中（黄绿） */
     {
         char buf[32];
         buf[0] = '\0';
@@ -359,7 +361,7 @@ void BL_TFT_ShowAPInfo(const char *ssid, const char *pass, const char *ip) {
         int x = (TFT_WIDTH - ip_len) / 2;
         if (x < 0) x = 0;
         sprintf(buf, "IP:%s", ip);
-        BL_TFT_DrawString((uint16_t)x, 124, buf, COLOR_GREEN, 1);
+        BL_TFT_DrawString((uint16_t)x, 124, buf, COLOR_LIME, 1);
     }
 }
 
@@ -375,14 +377,14 @@ void BL_TFT_ShowProgressBar(uint8_t percent) {
 }
 
 void BL_TFT_ShowProgressText(const char *text) {
-    BL_TFT_FillRect(5, 98, TFT_WIDTH-10, 12, COLOR_BLACK);
-    BL_TFT_DrawString(10, 98, text, COLOR_WHITE, 1);
+    BL_TFT_FillRect(0, 95, TFT_WIDTH, 20, COLOR_BLACK);   /* 全宽清除 */
+    tft_draw_center(97, text, COLOR_WHITE, 2);   /* 大字提示 */
 }
 
 void BL_TFT_ShowError(const char *text) {
     BL_TFT_Clear(COLOR_BLACK);
-    BL_TFT_FillRect(0, 100, TFT_WIDTH, 40, COLOR_RED);
-    BL_TFT_DrawString(6, 112, text, COLOR_WHITE, 1);
+    BL_TFT_FillRect(0, 100, TFT_WIDTH, 40, COLOR_ERR_BG);
+    tft_draw_center(112, text, COLOR_WHITE, 2);
 }
 
 static void Delay_ms(uint16_t ms) {

@@ -52,8 +52,12 @@ static int erase_app_area_with_progress(void)
 
 static int stage_erase(void)
 {
-    BL_TFT_ShowStatus("Erasing Ext Flash...");
-    if (W25Q128_EraseRange(FIRMWARE_TEMP_ADDR, PLATFORM_FIRMWARE_ERASE_SIZE) != W25Q128_OK) return -1;
+    BL_TFT_ShowStatus("ERASE...");
+    if (W25Q128_EraseRange(FIRMWARE_TEMP_ADDR, PLATFORM_FIRMWARE_ERASE_SIZE) != W25Q128_OK) {
+        BL_TFT_ShowStatus("ERASE FAIL");
+        return -1;
+    }
+    BL_TFT_ShowStatus("ERASE OK");
     return 0;
 }
 
@@ -103,6 +107,7 @@ static int flash_staged_to_app(void)
 {
     uint8_t buf[FLASH_CHUNK];
     uint32_t offset = 0U;
+    uint8_t last_pct = 0;
 
     if (erase_app_area_with_progress() != 0) return -1;
     while (offset < fw_total) {
@@ -112,7 +117,14 @@ static int flash_staged_to_app(void)
         if (W25Q128_Read(FIRMWARE_TEMP_ADDR + offset, buf, length) != W25Q128_OK) return -1;
         if (Flash_Write(APP_ADDR + offset, buf, length) != 0) return -1;
         offset += length;
+        /* 拷贝进度：每 10% 刷新一次 */
+        uint8_t pct = (uint8_t)(offset * 100U / fw_total);
+        if (pct != last_pct && (pct % 10) == 0) {
+            last_pct = pct;
+            BL_TFT_ShowProgressBar(pct);
+        }
     }
+    BL_TFT_ShowProgressBar(100);
     return 0;
 }
 
@@ -127,18 +139,19 @@ void BootloaderV2_Run(void)
     SystemCoreClockUpdate();
 
     SystemTime_Init();
-    Watchdog_Init();
+    Watchdog_Init();   /* 约 4 秒窗口 */
 
     UpgradeFlag_t flag;
-    int upgrade_requested = 0;
+    int have_flag = (UpgradeFlag_Read(&flag) == 0);
 
-    if (UpgradeFlag_Read(&flag) == 0) {
-        upgrade_requested = (flag.status == UPGRADE_STATUS_DOWNLOADED);
+    /* 阶段2：检测到 DOWNLOADED → 拷贝模式（刷写 APP，显示进度），不碰 ESP。
+     * 下载阶段完成时已写 flag（含 firmware_size/crc），重启后直接刷写。 */
+    if (have_flag && flag.status == UPGRADE_STATUS_DOWNLOADED) {
+        BootloaderV2_EnterCopyMode(&flag);
     }
 
-    /* 升级模式触发条件：升级标志=DOWNLOADED，或芯片里没有有效 App（首次刷写/测试）。
-     * 无 App 时直接进升级模式开 AP，方便首次上电和测试。 */
-    if (upgrade_requested || (BootloaderV2_VerifyApp() != 0)) {
+    /* 阶段1：无有效 App（首次刷写/测试）→ 下载模式（开 AP 收固件） */
+    if (BootloaderV2_VerifyApp() != 0) {
         BootloaderV2_EnterUpgradeMode();
     }
 
@@ -150,6 +163,41 @@ void BootloaderV2_Run(void)
     for (;;) {
         Watchdog_Kick();
     }
+}
+
+void BootloaderV2_EnterCopyMode(UpgradeFlag_t *flag)
+{
+    /* 显示完整界面 + 标题 */
+    BL_TFT_Init();
+    BL_TFT_ShowUpgradeScreen();
+    {
+        const char *ip = BL_ESP01S_GetIP();
+        BL_TFT_ShowAPInfo("QiMingXing", "12345678", ip);
+    }
+    BL_TFT_ShowStatus("WRITE TO MCU");
+
+    /* 从 flag 读取固件大小和 CRC */
+    fw_total = flag->firmware_size;
+    fw_crc = flag->firmware_crc32;
+
+    /* 校验外部 Flash 固件 */
+    if (verify_staged_image() != 0) {
+        BL_TFT_ShowError("Verify Failed!");
+        UpgradeFlag_Clear();
+        for (;;) Watchdog_Kick();
+    }
+
+    /* 刷写 APP（内部实现更新进度条） */
+    if (flash_staged_to_app() == 0 && BootloaderV2_VerifyFirmware() == 0) {
+        BL_TFT_ShowStatus("UPDATE OK!");
+        UpgradeFlag_Clear();
+        Delay_ms(2000);
+        NVIC_SystemReset();
+    }
+
+    BL_TFT_ShowError("Copy Failed!");
+    UpgradeFlag_Clear();
+    for (;;) Watchdog_Kick();
 }
 
 void BootloaderV2_EnterUpgradeMode(void)
@@ -168,14 +216,14 @@ void BootloaderV2_EnterUpgradeMode(void)
         flash_ok = 1;
     }
 
-    /* ── 最后尝试初始化屏幕（可选，失败不影响功能） */
+    /* ── 初始化屏幕：直接显示完整页面，状态文字表示当前阶段 ── */
     BL_TFT_Init();
     BL_TFT_ShowUpgradeScreen();
-    BL_TFT_ShowStatus("AP: READY");
     {
         const char *ip = BL_ESP01S_GetIP();
         BL_TFT_ShowAPInfo("QiMingXing", "12345678", ip);
     }
+    BL_TFT_ShowStatus("DOWNLOAD TO QFLASH");
 
     for (retry = 0; retry < MAX_RETRY; retry++) {
         fw_received = 0;
@@ -187,10 +235,13 @@ void BootloaderV2_EnterUpgradeMode(void)
         }
 
         BL_ESP01S_ResetTransfer();
-        BL_TFT_ShowStatus("Waiting for upload...");
+        BL_TFT_ShowProgressBar(0);
+        BL_TFT_ShowStatus("WAIT");
 
         uint32_t last_progress_tick = 0;
         uint32_t last_watchdog = SystemTime_Millis();
+        uint8_t last_progress_step = 0;   /* 已显示的 10% 档位 */
+        uint8_t shown_wait = 0;
         int transfer_done = 0;
 
         while (!transfer_done) {
@@ -206,13 +257,19 @@ void BootloaderV2_EnterUpgradeMode(void)
             if (esp_state == 1) {
                 fw_received = BL_ESP01S_GetReceivedSize();
                 fw_total = BL_ESP01S_GetTotalSize();
-                if (fw_total > 0 && (int32_t)(now - last_progress_tick) > 300) {
-                    last_progress_tick = now;
+                if (fw_total > 0) {
                     uint8_t progress = (uint8_t)(fw_received * 100U / fw_total);
-                    BL_TFT_ShowProgressBar(progress);
-                    char buf[48];
-                    sprintf(buf, "%d%% (%lu/%lu KB)", progress, fw_received/1024, fw_total/1024);
-                    BL_TFT_ShowProgressText(buf);
+                    uint8_t step = (uint8_t)(progress / 10);
+                    /* 每达成 10% 才刷新一次屏幕，减少与 Flash 写入的 SPI 干涉 */
+                    if (step != last_progress_step && (int32_t)(now - last_progress_tick) > 500) {
+                        last_progress_step = step;
+                        last_progress_tick = now;
+                        BL_TFT_ShowProgressBar(progress);
+                        char buf[24];
+                        sprintf(buf, "DL %d%%", progress);
+                        BL_TFT_ShowStatus(buf);   /* 状态区大字显示进度 */
+                    }
+                    shown_wait = 1;
                 }
             } else if (esp_state == 2) {
                 transfer_done = 1;
@@ -220,31 +277,62 @@ void BootloaderV2_EnterUpgradeMode(void)
                 BL_TFT_ShowError("Upload Error!");
                 Delay_ms(2000);
                 break;
+            } else {
+                /* 一直没进入接收：提示等待 */
+                if (!shown_wait && (int32_t)(now - last_progress_tick) > 3000) {
+                    last_progress_tick = now;
+                    BL_TFT_ShowStatus("NO DATA...");
+                }
             }
         }
 
         if (!transfer_done) continue;
 
+        /* 上传完成：从 bl_esp01s 重新读取真实固件大小（multipart 剥离后的大小） */
+        fw_total = BL_ESP01S_GetTotalSize();
+        fw_received = BL_ESP01S_GetReceivedSize();
         fw_crc = BL_ESP01S_GetFirmwareCrc32();
 
-        BL_TFT_ShowStatus("Verifying...");
+        BL_TFT_ShowStatus("DOWNLOAD OK");
         Watchdog_Kick();
 
         if (verify_staged_image() == 0) {
-            BL_TFT_ShowStatus("Writing App...");
-            if (flash_staged_to_app() == 0 && BootloaderV2_VerifyFirmware() == 0) {
-                BL_TFT_ShowStatus("Update OK! Restarting...");
-                UpgradeFlag_Clear();
-                Delay_ms(2000);
-                NVIC_SystemReset();
-                return;
-            }
-            BL_TFT_ShowError("Flash Failed!");
-            if (retry < MAX_RETRY - 1) {
-                BL_TFT_ShowStatus("Retrying...");
-                Delay_ms(1500);
-            }
+            /* 下载完成：显示完整界面 + 进度 100%，写入升级标志后复位。
+             * 重启后进入拷贝阶段（刷写 APP，显示拷贝进度）。 */
+            BL_TFT_ShowUpgradeScreen();
+            BL_TFT_ShowProgressBar(100);
+            BL_TFT_ShowStatus("Download OK");
+            Watchdog_Kick();
+
+            UpgradeFlag_t uf;
+            memset(&uf, 0, sizeof(uf));
+            uf.magic = UPGRADE_MAGIC;
+            uf.version = 0x00020000;
+            uf.status = UPGRADE_STATUS_DOWNLOADED;
+            uf.firmware_size = fw_total;
+            uf.firmware_crc32 = fw_crc;
+            uf.target_addr = APP_ADDR;
+            uf.timestamp = SystemTime_Millis();
+            UpgradeFlag_Write(&uf);
+            UpgradeFlag_WriteExt(&uf);
+
+            BL_TFT_ShowStatus("Restarting...");
+            Delay_ms(2000);
+            NVIC_SystemReset();
+            return;
         } else {
+            /* 校验失败：显示关键数值便于定位 */
+            uint8_t v0[8];
+            char buf[48];
+            uint32_t sp;
+            if (W25Q128_Read(FIRMWARE_TEMP_ADDR, v0, 8U) == W25Q128_OK) {
+                sp = (uint32_t)v0[0] | ((uint32_t)v0[1] << 8) | ((uint32_t)v0[2] << 16) | ((uint32_t)v0[3] << 24);
+                sprintf(buf, "VFAIL %lu SP%08X", fw_total, sp);
+            } else {
+                sprintf(buf, "VFAIL %lu RDERR", fw_total);
+            }
+            BL_TFT_ShowStatus(buf);
+            Delay_ms(5000);
             BL_TFT_ShowError("Verify Failed!");
             if (retry < MAX_RETRY - 1) {
                 BL_TFT_ShowStatus("Retrying...");

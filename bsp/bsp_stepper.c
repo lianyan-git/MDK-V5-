@@ -8,11 +8,11 @@
 
 static volatile uint8_t stepper_enabled = 0;
 static volatile uint8_t motor_running = 0;
-static volatile int16_t motor_remaining_steps = 0;
+static volatile int32_t motor_remaining_steps = 0;
 static volatile uint8_t motor_direction_cw = 1;
 static volatile uint16_t step_period_us = STEP_PERIOD_US;
 static volatile uint32_t last_step_time = 0;
-static volatile int16_t target_steps = 0;
+static volatile int32_t target_steps = 0;
 
 void Stepper_Init(void)
 {
@@ -24,7 +24,7 @@ void Stepper_Init(void)
     g.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(PIN_STEP_EN_PORT, &g);
 
-    GPIO_SetBits(PIN_STEP_EN_PORT, PIN_STEP_EN_PIN);   // 默认禁用 (高电平有效使�?
+    GPIO_SetBits(PIN_STEP_EN_PORT, PIN_STEP_EN_PIN);   // 默认禝用 (高电平有效使�?
     GPIO_ResetBits(PIN_STEP_EN_PORT, PIN_STEP_STEP_PIN);
     GPIO_ResetBits(PIN_STEP_EN_PORT, PIN_STEP_DIR_PIN);
 }
@@ -61,10 +61,10 @@ void Stepper_Move(int32_t steps)
     if (!stepper_enabled) return;
     if (steps > 0) {
         set_dir(1);
-        motor_remaining_steps = (steps > 32767) ? 32767 : (int16_t)steps;
+        motor_remaining_steps = steps;
     } else if (steps < 0) {
         set_dir(0);
-        motor_remaining_steps = (int16_t)((steps < -32767) ? -32767 : steps);
+        motor_remaining_steps = steps;
     } else {
         motor_remaining_steps = 0;
     }
@@ -76,7 +76,14 @@ void Stepper_Move(int32_t steps)
 
 void Stepper_SetOscillate(int32_t steps)
 {
-    target_steps = (int16_t)steps;
+    target_steps = steps;
+    /* ?????????????????????????? */
+    if (stepper_enabled && target_steps != 0 && !motor_running) {
+        motor_running = 1;
+        last_step_time = SystemTime_Millis();
+        set_dir(target_steps < 0 ? 0 : 1);
+        motor_remaining_steps = target_steps;
+    }
 }
 
 void Stepper_Update(void)

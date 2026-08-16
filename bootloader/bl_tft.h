@@ -9,6 +9,21 @@
 
 #include <stdint.h>
 
+#define COLOR_BLACK     0x0000
+#define COLOR_WHITE     0xFFFF
+#define COLOR_RED       0xF800
+#define COLOR_GREEN     0x07E0
+#define COLOR_BLUE      0x001F
+#define COLOR_YELLOW    0xFFE0
+#define COLOR_CYAN      0x07FF
+#define COLOR_MAGENTA   0xF81F
+#define COLOR_ORANGE    0xFC00
+#define COLOR_LIME      0x7FE0   /* 黄绿 */
+#define COLOR_GRAY      0x8410
+#define COLOR_DARK      0x4208
+#define COLOR_TITLE_BG  0x0821   /* 标题栏深青灰背景 */
+#define COLOR_ERR_BG    0x9000   /* 错误条深红背景 */
+
 // 初始化
 void BL_TFT_Init(void);
 
@@ -44,5 +59,8 @@ void BL_TFT_DrawChar(uint16_t x, uint16_t y, char c, uint16_t color, uint8_t siz
 
 // 填充矩形
 void BL_TFT_FillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
+
+// 水平居中绘制文字
+void BL_TFT_DrawCentered(uint16_t y, const char *str, uint16_t color, uint8_t size);
 
 #endif /* __BL_TFT_H */

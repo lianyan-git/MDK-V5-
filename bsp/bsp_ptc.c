@@ -108,21 +108,32 @@ uint8_t PTC_PID_AutotuneProcess(void)
     }
 
     static float last_temp = 0;
-    if (temp > temp_peak && temp > last_temp) {
-        temp_peak = temp;
-        peak_time = now;
-    }
-    if (temp < temp_prev_peak && temp < last_temp) {
-        if (peak_count > 0) {
-            oscillation_amplitude = (oscillation_amplitude + (temp_peak - temp_prev_peak)) / 2.0f;
+    static uint8_t rising = 0;
+    /* 峰值检测：跟踪上升/下降沿，记录极大值点
+     * （修复原实现 temp_peak 初值 0 导致正常加热难进入峰值统计的问题） */
+    if (temp > last_temp) {
+        if (!rising) {
+            rising = 1;               /* 由降转升，前一点是谷底，可能之前有峰值 */
         }
-        temp_prev_peak = temp_peak;
-        temp_peak = temp;
-        prev_peak_time = peak_time;
-        peak_time = now;
-        peak_count++;
-        if (peak_count >= 2) {
-            oscillation_period = (float)(peak_time - prev_peak_time) / 1000.0f;
+    } else if (temp < last_temp) {
+        if (rising) {
+            rising = 0;               /* 由升转降，前一点是峰值 */
+            if (peak_count == 0) {
+                temp_prev_peak = temp_peak;
+                temp_peak = last_temp;
+                prev_peak_time = peak_time;
+                peak_time = now;
+            } else {
+                temp_prev_peak = temp_peak;
+                temp_peak = last_temp;
+                prev_peak_time = peak_time;
+                peak_time = now;
+            }
+            peak_count++;
+            if (peak_count >= 2) {
+                oscillation_period = (float)(peak_time - prev_peak_time) / 1000.0f;
+                oscillation_amplitude = (temp_peak - temp_prev_peak);
+            }
         }
     }
     last_temp = temp;
@@ -232,22 +243,31 @@ uint8_t PTC_TempPID_AutotuneProcess(void)
         }
     }
 
-    if (temp > temp_pid_peak && temp > temp_pid_last) {
-        temp_pid_peak = temp;
-        temp_pid_peak_time = now;
+    static float temp_pid_rising_state = 0;
+    uint8_t pid_rising = 0;
+    /* 峰值检测：跟踪上升/下降沿（修复原实现峰值统计难进入的问题） */
+    if (temp > temp_pid_last) {
+        pid_rising = 1;
+        temp_pid_rising_state = 1;
+    } else if (temp < temp_pid_last) {
+        pid_rising = 0;
+        temp_pid_rising_state = 0;
     }
-    if (temp < temp_pid_prev_peak && temp < temp_pid_last) {
-        if (temp_pid_peak_count > 0) {
-            temp_pid_amplitude = (temp_pid_amplitude + (temp_pid_peak - temp_pid_prev_peak)) / 2.0f;
-        }
+    if (pid_rising == 0 && temp_pid_rising_state == 0 && temp_pid_last > temp_pid_peak) {
+        /* 已到峰值点（升转降） */
         temp_pid_prev_peak = temp_pid_peak;
-        temp_pid_peak = temp;
+        temp_pid_peak = temp_pid_last;
         temp_pid_prev_peak_time = temp_pid_peak_time;
         temp_pid_peak_time = now;
         temp_pid_peak_count++;
         if (temp_pid_peak_count >= 2) {
             temp_pid_period = (float)(temp_pid_peak_time - temp_pid_prev_peak_time) / 1000.0f;
+            temp_pid_amplitude = (temp_pid_peak - temp_pid_prev_peak);
         }
+        temp_pid_rising_state = 2;   /* 已记录峰值 */
+    }
+    if (pid_rising == 1 && temp_pid_rising_state == 2) {
+        temp_pid_rising_state = 1;   /* 又开始上升 */
     }
     temp_pid_last = temp;
 

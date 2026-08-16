@@ -48,9 +48,12 @@ void NTC_Init(void)
 
 uint16_t NTC_ReadADC(void)
 {
+    volatile uint32_t guard = 0;
     ADC_RegularChannelConfig(ADC1, ADC_Channel_2, 1, ADC_SampleTime_55Cycles5);
     ADC_SoftwareStartConvCmd(ADC1, ENABLE);
-    while (!ADC_GetFlagStatus(ADC1, ADC_FLAG_EOC));
+    while (!ADC_GetFlagStatus(ADC1, ADC_FLAG_EOC)) {
+        if (++guard > 100000U) return 0;   /* ???????????? */
+    }
     return ADC_GetConversionValue(ADC1);
 }
 
