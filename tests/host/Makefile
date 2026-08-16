@@ -25,13 +25,6 @@ UPDATE_SOURCES := test_ota_update.c mock_spi1_bus.c mock_internal_flash.c \
 	../../module/ota_metadata_store.c ../../module/ota_staging.c \
 	../../module/ota_update_controller.c ../../module/ota_boot_request_store.c \
 	../../shared/ota_contract.c ../../bsp/bsp_w25q128.c
-BOOT_UPDATE_SOURCES := test_boot_updater.c mock_spi1_bus.c mock_internal_flash.c \
-	../../bootloader/boot_updater.c ../../module/ota_boot_request_store.c \
-	../../module/ota_metadata_store.c ../../module/ota_staging.c \
-	../../shared/ota_contract.c ../../bsp/bsp_w25q128.c
-BOOT_JUMP_SOURCES := test_boot_jump.c mock_boot_platform.c \
-	../../bootloader/boot_jump.c ../../bootloader/boot_recovery.c \
-	../../shared/ota_contract.c
 ESP_HTTP_SOURCES := test_esp_http_bridge.c mock_esp_bridge.c \
 	../../module/esp_http_bridge.c ../../module/http_server.c \
 	../../shared/ota_contract.c
@@ -39,8 +32,7 @@ TARGETS := $(BUILD_DIR)/test_p0 $(BUILD_DIR)/test_ota_contract \
 	$(BUILD_DIR)/test_w25q128 $(BUILD_DIR)/test_tft_display \
 	$(BUILD_DIR)/test_esp_at $(BUILD_DIR)/test_http_server \
 	$(BUILD_DIR)/test_ota_upload $(BUILD_DIR)/test_ota_metadata_store \
-	$(BUILD_DIR)/test_ota_update $(BUILD_DIR)/test_boot_updater \
-	$(BUILD_DIR)/test_boot_jump $(BUILD_DIR)/test_esp_http_bridge
+	$(BUILD_DIR)/test_ota_update $(BUILD_DIR)/test_esp_http_bridge
 
 .PHONY: all test
 
@@ -82,14 +74,6 @@ $(BUILD_DIR)/test_ota_update: $(UPDATE_SOURCES)
 	mkdir -p "$(BUILD_DIR)"
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(UPDATE_SOURCES) -o "$@"
 
-$(BUILD_DIR)/test_boot_updater: $(BOOT_UPDATE_SOURCES)
-	mkdir -p "$(BUILD_DIR)"
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(BOOT_UPDATE_SOURCES) -o "$@"
-
-$(BUILD_DIR)/test_boot_jump: $(BOOT_JUMP_SOURCES)
-	mkdir -p "$(BUILD_DIR)"
-	$(CC) $(CPPFLAGS) $(CFLAGS) $(BOOT_JUMP_SOURCES) -o "$@"
-
 $(BUILD_DIR)/test_esp_http_bridge: $(ESP_HTTP_SOURCES)
 	mkdir -p "$(BUILD_DIR)"
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(ESP_HTTP_SOURCES) -o "$@"
@@ -104,6 +88,4 @@ test: $(TARGETS)
 	"$(BUILD_DIR)/test_ota_upload"
 	"$(BUILD_DIR)/test_ota_metadata_store"
 	"$(BUILD_DIR)/test_ota_update"
-	"$(BUILD_DIR)/test_boot_updater"
-	"$(BUILD_DIR)/test_boot_jump"
 	"$(BUILD_DIR)/test_esp_http_bridge"

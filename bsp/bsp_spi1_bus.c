@@ -43,7 +43,7 @@ Spi1BusStatus_t Spi1Bus_Init(void)
     spi.SPI_CPOL = SPI_CPOL_Low;
     spi.SPI_CPHA = SPI_CPHA_1Edge;
     spi.SPI_NSS = SPI_NSS_Soft;
-    spi.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_4;
+    spi.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_8;   /* 72M/8=9MHz，W25Q128 稳定 */
     spi.SPI_FirstBit = SPI_FirstBit_MSB;
     SPI_Init(SPI1, &spi);
     SPI_Cmd(SPI1, ENABLE);

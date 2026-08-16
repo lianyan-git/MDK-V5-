@@ -249,7 +249,7 @@
               <IROM>
                 <Type>1</Type>
                 <StartAddress>0x08000000</StartAddress>
-                <Size>0x00008000</Size>
+                <Size>0x00004800</Size>
               </IROM>
               <XRAM>
                 <Type>0</Type>
@@ -274,7 +274,7 @@
               <OCR_RVCT4>
                 <Type>1</Type>
                 <StartAddress>0x08000000</StartAddress>
-                <Size>0x00008000</Size>
+                <Size>0x00004800</Size>
               </OCR_RVCT4>
               <OCR_RVCT5>
                 <Type>1</Type>
@@ -892,7 +892,7 @@
             <v6Rtti>0</v6Rtti>
             <VariousControls>
               <MiscControls />
-              <Define>STM32F10X_MD,USE_STDPERIPH_DRIVER</Define>
+              <Define>STM32F10X_MD,USE_STDPERIPH_DRIVER,BOOTLOADER_BUILD</Define>
               <Undefine />
               <IncludePath>..\..\app;..\..\board;..\..\bootloader;..\..\bsp;..\..\shared;..\..\libraries\CMSIS\CM3\CoreSupport;..\..\libraries\CMSIS\CM3\DeviceSupport\ST\STM32F10x;..\..\libraries\STM32F10x_StdPeriph_Driver\inc;..\..\module</IncludePath>
             </VariousControls>
@@ -1147,6 +1147,3 @@
     </Layers>
   </LayerInfo>
 </Project>
-
-
-
