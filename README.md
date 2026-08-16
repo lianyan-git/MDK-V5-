@@ -164,39 +164,19 @@ Bootloader 每次上电时：
 
 ### 2026-08-16
 
-#### 新增
-- Bootloader 完整 OTA 升级链路：ESP01S AP 模式 + Web 网页上传固件（两阶段：下载到外部 Flash → 拷贝到 App 分区）
-- 上传固件暂存外部 Flash（W25Q128）→ 校验（CRC32 + 向量表）→ 刷入 App 分区
-- App 端 Web 页面"固件升级"按钮：写入升级标志并复位跳转 Bootloader
-- `bl_tft.c` 增加真实 5×7 点阵字体，屏幕可显示 AP 名称/密码/IP/升级进度
-- 屏幕适配 1.14 寸 135×240 ST7789 横屏（240×135），UI 完整显示标题/状态/进度/AP 信息
-
 #### 修复
-- **修复 `ESP_WaitResponse` / `BL_ESP01S_Process` 的 RX 读取逻辑反转 bug**（`EspUart_ReadByte` 返回 1=有字节，原代码写成 `==0`，导致 ESP 回复的每个字节都被丢弃、AT 握手永远失败）
-- **修复固件上传 256 字节缓冲索引回绕 bug**（`fw_buf_idx` 从 `uint8_t` 改为 `uint16_t`，原 255+1 回绕导致 `flush_fw_buffer()` 永不触发、固件无法写入 Flash）
-- **修复 HTTP multipart/form-data 未剥离 bug**（新增 `feed_fw_byte()` 解析 boundary，只把真实固件数据写入 Flash）
-- **修复 ESP `+IPD,id,len:` 分片前缀被当固件数据写入的问题**（按分片模型解析）
-- **修复 `Content-Length` 解析**：改为流式检测（大小写不敏感），容忍 ESP 调试输出（`_STA_IP:`/`RECV`/`send ok` 等）穿插
-- 修复 ESP 残留 STA 配置导致的热点延迟问题（移除 `AT+RST`，上电只初始化一次，AP 更快广播）
-- 修复 WS2812 时序错误（改用 SysTick 精确周期延时，符合 800kHz 协议）
-- 修复 TFT 背光初始化缺失 `GPIOB` 时钟导致背光无法点亮
-- 修复 TFT SPI 分频过高（36MHz→9MHz）、SPI 收发无超时导致看门狗复位
-- 修复 `bl_tft.c` `Delay_ms` 不喂狗导致的复位循环
-- `EspUart_Init` 不再在初始化时切换 ESP 电源，避免复位抖动
-- `EspUart_SetEnabled` 适配 P 沟道 MOS（AO3401）低电平导通逻辑
-- **App：AHT20 假驱动改为真实软件 I2C 驱动**（原固定返回 25°C/50%，会导致加热器持续全功率）
-- **App：PTC 过温保护接入主控制链**（`NTC_IsOverTemp` 超 85°C 立即切断加热）
-- **App：修复烘干倒计时快 5 倍**（200ms 控制周期累计满 1 秒才递减）
-- **App：修复冷却状态进不去**（`if(!drying_active) return` 挡住 STATE_COOLING）
-- **App：参数读取移到 Flash 初始化后** + 参数语义范围校验 + 保留字节清零 + 写入检查
-- **App：NTC ADC 读取加超时保护**（防外设异常卡死主循环）
-- **App：PTC PID 自整定峰值检测修复**（上升/下降沿跟踪）
-- **App：步进电机摆动模式修复**（启动电机）+ 长距离步数支持（int32_t）
+- **修复 OTA 分块上传协议**：改为 1KB 分块 POST（替代单次 multipart 大 POST），每块回 `Content-Length: 0` 让浏览器立即完成 XHR，解决"卡 10%"问题
+- **修复 header/body 边界**：`\r\n\r\n` 后进入 body 阶段，避免把换行符当固件数据写入
+- **修复 GET 请求残留 +IPD 帧状态**：`GET /done` 等处理后剩余帧字节被 `ESP_WaitResponse` 消耗，导致 `in_ipd`/`ipd_remain` 状态残留、吃掉下一帧数据——新增 `ipd_skip_pending` 机制丢弃剩余帧字节
+- **修复 ESP01S 电源关断**：`EnterCopyMode` 和 `JumpToApp` 中初始化 ESP_EN 引脚为推挽输出并置高，同时 PA9（UART TX）输出低电平克服 ESP 内部上拉导致的回灌供电（2.6V 伪供电）
+- **修复拷贝模式 SPI1 未初始化**：`EnterCopyMode` 中先调 `W25Q128_Init`（含 `Spi1Bus_Init`）再 `BL_TFT_Init`，解决屏幕黑屏
+- **修复超时处理**：10s 无数据时若 `fw_received == total_expected` 直接完成传输，不等 `/done`，避免浏览器响应丢失导致"Upload Error"
+- `verify_staged_image` 修正向量表在偏移 0 时被误判"未找到"
+- 上传页 JS 精简：移除浏览器端进度条（省 ~400B）、移除 "OK, restarting..." 文字
 
 #### 变更
-- Bootloader 入口切换为 V2 引导（ESP AP 升级），移除 V1 引导文件
-- OTA 上传协议改为两阶段（下载到外部 Flash → 重启 → 拷贝到 App），支持校验后写入
-- **Flash 分区调整**：Bootloader 16KB→18KB，App 地址 `0x08004800`→`0x08005000`，大小 44KB
-- 热点名称 `QiMingXing`，密码 `12345678`
-- 屏幕 UI 按横屏（240×135）重新布局：标题栏 / 状态区 / 进度条 / AP 信息（SSID 左、密码右、IP 居中）
-- 屏幕文字居中显示（除 WiFi 名称、密码），标题彩色分段 "lianyan & -E-"
+- **移除旧 v1 Bootloader**（`boot_main.c`/`boot_updater.c`/`boot_jump.c`/`boot_recovery.c`/`boot_platform_stm32.c` 及对应 .h），这些已被新 V2 引导（`bl_main.c`）替代
+- 清理 host 测试及 Makefile 中旧 v1 bootloader 引用
+- `eide.yml` APP 分区修正为 `0x08005000`/`0xB000`（原 `0x08004800`/`0xB800` 错误，会覆盖升级标志区）
+- `scripts/configure_keil_targets.py` Bootloader 入口改 `bl_main.c`，分区地址与 `platform_contract.h` 一致
+- Keil 工程（uvprojx）已同步至新分区配置
