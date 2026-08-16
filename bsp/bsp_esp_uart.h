@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define ESP_UART_RX_CAPACITY 512U
+#define ESP_UART_RX_CAPACITY 8192U
 
 typedef enum {
     ESP_UART_OK = 0,

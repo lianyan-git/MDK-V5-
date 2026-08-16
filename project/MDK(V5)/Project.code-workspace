@@ -44,5 +44,22 @@
             "dan-c-underwood.arm",
             "marus25.cortex-debug"
         ]
+    },
+    "launch": {
+        "version": "0.2.0",
+        "configurations": [
+        {
+            "cwd": "${workspaceRoot}",
+            "executable": "",
+            "name": "Debug with OpenOCD",
+            "request": "launch",
+            "type": "cortex-debug",
+            "servertype": "openocd",
+            "configFiles": [],
+            "searchDir": [],
+            "runToEntryPoint": "main",
+            "showDevDebugOutput": "none"
+        }
+        ]
     }
 }

@@ -11,9 +11,9 @@
 #include <stdio.h>
 
 static void Delay_ms(uint16_t ms);
-static void finish_upload(int conn_id);
 static void send_upload_page(int conn_id);
 static void send_no_content(int conn_id);
+static void send_200(int conn_id);
 
 #define FW_BUF_SIZE         256
 #define AT_TIMEOUT_MS       800
@@ -34,21 +34,30 @@ static char ap_ip[16] = "192.168.4.1";
 static int transfer_state = 0;
 static int transfer_error = 0;
 
-/* ── HTTP/multipart 上传解析状态 ── */
+/* ── HTTP 上传解析状态 ── */
 static char http_line[1536];
 static uint16_t http_li = 0;
-static uint8_t mp_state = 0;        /* 0=跳 multipart 头, 1=写固件, 2=尾部完成 */
-static uint8_t mp_hdr = 0;          /* 匹配 \r\n\r\n */
-static char mp_boundary[80];
-static uint8_t mp_boundary_len = 0;
-static uint8_t mp_bd_match = 0;     /* 尾部 boundary 匹配进度 */
 static uint32_t body_len = 0;       /* Content-Length */
 static uint32_t body_recv = 0;      /* 已接收 body 字节数 */
 
-/* 流式 Content-Length 检测状态 */
+/* 流式 Content-Length / X-Total-Size 检测状态 */
 static uint8_t clm = 0;
 static uint8_t cl_read = 0;
 static uint32_t cl_val = 0;
+static uint8_t tsm = 0;              /* "x-total-size:" 匹配进度 */
+static uint8_t ts_read = 0;
+static uint32_t ts_val = 0;
+static uint32_t total_expected = 0;  /* 浏览器上报的文件总字节数 */
+static uint8_t hdr_crlf = 0;         /* header 结束符 \r\n\r\n 匹配进度 */
+
+static int esp_conn_id = 0;   /* 当前 +IPD 连接的 id（分块上传响应用） */
+static uint8_t ipd_skip_pending = 0;  /* GET 处理完后，跳过当前 +IPD 分片剩余字节 */
+
+/* +IPD 分片解析状态（文件级：ResetTransfer 也要清理，防止跨传输残留吃掉下一请求） */
+static uint8_t in_ipd = 0;      /* 1=正在收 +IPD 分片数据 */
+static uint32_t ipd_remain = 0; /* 当前分片剩余数据字节 */
+static char pfx[24];
+static uint8_t pfx_len = 0;
 
 static void ESP_Send(const char *s)
 {
@@ -155,15 +164,21 @@ void BL_ESP01S_ResetTransfer(void)
     transfer_error = 0;
     body_len = 0;
     body_recv = 0;
-    mp_state = 0;
-    mp_hdr = 0;
-    mp_boundary_len = 0;
-    mp_bd_match = 0;
     clm = 0;
     cl_read = 0;
     cl_val = 0;
+    tsm = 0;
+    ts_read = 0;
+    ts_val = 0;
+    total_expected = 0;
+    hdr_crlf = 0;
     http_li = 0;
     http_line[0] = '\0';
+    esp_conn_id = 0;
+    ipd_skip_pending = 0;
+    in_ipd = 0;
+    ipd_remain = 0;
+    pfx_len = 0;
 }
 
 int BL_ESP01S_GetTransferState(void)
@@ -176,13 +191,20 @@ int BL_ESP01S_GetTransferState(void)
 
 uint32_t BL_ESP01S_GetReceivedSize(void) { return fw_received; }
 uint32_t BL_ESP01S_GetTotalSize(void) { return fw_total; }
+uint32_t BL_ESP01S_GetBodyLen(void) { return body_len; }
+uint32_t BL_ESP01S_GetTotalFirmwareSize(void) { return total_expected; }
 uint32_t BL_ESP01S_GetFirmwareCrc32(void) { return ~fw_crc; }
 
 static void flush_fw_buffer(void)
 {
     if (fw_buf_idx > 0) {
-        if (W25Q128_Write(fw_write_addr, fw_buffer, fw_buf_idx) != W25Q128_OK) {
+        W25Q128_Status_t st = W25Q128_Write(fw_write_addr, fw_buffer, fw_buf_idx);
+        if (st != W25Q128_OK) {
             transfer_error = 1;
+            fw_buf_idx = 0;   /* 失败重置，避免越界写 fw_buffer */
+            char dbg[32];
+            sprintf(dbg, "W%d@%06lX", (int)st, (unsigned long)fw_write_addr);
+            BL_TFT_ShowStatus(dbg);
             return;
         }
         for (uint32_t i = 0; i < fw_buf_idx; i++) {
@@ -202,122 +224,72 @@ static void write_fw_byte(uint8_t byte)
     }
 }
 
-/* 处理一个固件 body 字节（含 multipart 剥离）。
- * 返回 1 表示上传完成。 */
+/* 处理一个固件 body 字节（分块上传：块内容写入外部 Flash）。
+ * 返回 1 表示当前块接收完成。 */
 static int feed_fw_byte(char c)
 {
     body_recv++;
 
-    if (mp_state == 0) {
-        /* 跳过 multipart 头：--boundary\r\n ... \r\n\r\n */
-        if (c == '\r' && mp_hdr == 0) mp_hdr = 1;
-        else if (c == '\n' && mp_hdr == 1) mp_hdr = 2;
-        else if (c == '\r' && mp_hdr == 2) mp_hdr = 3;
-        else if (c == '\n' && mp_hdr == 3) { mp_hdr = 0; mp_state = 1; }
-        else mp_hdr = 0;
-    } else if (mp_state == 1) {
-        /* 写固件数据；检测尾部 "\r\n--" + boundary。
-         * 匹配期间字节暂存，确认是 boundary 则丢弃，否则写回固件。 */
-        static uint8_t bd_buf[96];
-        static uint8_t bd_buf_len = 0;
-        uint8_t is_boundary = 0;
-
-        if (mp_boundary_len > 0 && mp_bd_match > 0) {
-            /* 已在匹配中 */
-            if (bd_buf_len < sizeof(bd_buf)) bd_buf[bd_buf_len++] = (uint8_t)c;
-            const char *bd = mp_boundary;
-            uint8_t expect;
-            if (mp_bd_match == 1) expect = '\r';
-            else if (mp_bd_match == 2) expect = '\n';
-            else if (mp_bd_match == 3) expect = '-';
-            else if (mp_bd_match == 4) expect = '-';
-            else expect = (uint8_t)bd[mp_bd_match - 4];
-            if (c == (char)expect) {
-                mp_bd_match++;
-                if (mp_bd_match >= (uint8_t)(4 + mp_boundary_len)) {
-                    is_boundary = 1;   /* 完整匹配到 boundary，丢弃缓存 */
-                    mp_state = 2;
-                    mp_bd_match = 0;
-                    bd_buf_len = 0;
-                }
-            } else {
-                /* 匹配失败：把缓存字节写回固件 */
-                for (uint8_t k = 0; k < bd_buf_len; k++) {
-                    if (fw_write_addr < FIRMWARE_TEMP_ADDR + PLATFORM_FIRMWARE_ERASE_SIZE) {
-                        write_fw_byte(bd_buf[k]);
-                        fw_received++;
-                        fw_total = fw_received;
-                    }
-                }
-                bd_buf_len = 0;
-                /* 当前字节 c 需重新按普通逻辑处理 */
-                mp_bd_match = 0;
-            }
-        } else if (c == '\r' && mp_boundary_len > 0) {
-            /* 开始匹配尾部边界 */
-            mp_bd_match = 1;
-            if (bd_buf_len < sizeof(bd_buf)) bd_buf[bd_buf_len++] = (uint8_t)c;
-        } else {
-            if (fw_write_addr < FIRMWARE_TEMP_ADDR + PLATFORM_FIRMWARE_ERASE_SIZE) {
-                write_fw_byte((uint8_t)c);
-                fw_received++;
-                fw_total = fw_received;
-            }
-        }
-        (void)is_boundary;
+    if (fw_write_addr < FIRMWARE_TEMP_ADDR + PLATFORM_FIRMWARE_ERASE_SIZE) {
+        write_fw_byte((uint8_t)c);
+        fw_received++;
+        fw_total = fw_received;
     }
 
-    /* body 收完（Content-Length 达到）即完成 */
+    /* 当前块收完（Content-Length 达到）：flush，等待下一块或 /done */
     if (body_recv >= body_len) {
-        finish_upload(0);
+        flush_fw_buffer();
+        body_len = 0;
+        body_recv = 0;
         return 1;
     }
     return 0;
 }
 
-/* 大小写不敏感的子串查找（HTTP 头名不区分大小写） */
-static char *mystr_casestr(const char *h, const char *n)
-{
-    if (!*n) return (char *)h;
-    for (; *h; h++) {
-        const char *p = h, *q = n;
-        while (*q && *p) {
-            char a = *p, b = *q;
-            if (a >= 'A' && a <= 'Z') a += 32;
-            if (b >= 'A' && b <= 'Z') b += 32;
-            if (a != b) break;
-            p++; q++;
-        }
-        if (!*q) return (char *)h;
-    }
-    return 0;
-}
-
-/* 处理一个 HTTP 层字节：流式检测 content-length / GET，body 阶段转 feed_fw_byte */
+/* 处理一个 HTTP 层字节：流式检测 content-length / x-total-size / GET，
+ * 头结束符 \r\n\r\n 后才进入 body 阶段（分块上传：块内容写入外部 Flash）。 */
 static void feed_http_byte(char c)
 {
     static const char clpat[] = "content-length:";
+    static const char tspat[] = "x-total-size:";
 
     if (body_len == 0) {
-        /* 累积 http_line（用于 GET 检测 + boundary 提取） */
+        /* ── header 阶段 ── */
         if (http_li < sizeof(http_line) - 1) http_line[http_li++] = c;
         http_line[http_li] = '\0';
 
-        /* GET：打开网页 / favicon */
-        if (strstr(http_line, "GET /favicon")) {
-            send_no_content(0);
+        /* GET：打开网页 / favicon / 分块上传完成 */
+        if (strstr(http_line, "GET /done")) {
+            /* 分块上传全部完成 */
+            flush_fw_buffer();
+            if (total_expected > 0 && fw_received != total_expected) {
+                transfer_error = 1;   /* 数据不完整：禁止进入引导 */
+            } else {
+                fw_total = fw_received;
+                transfer_state = 2;
+            }
+            send_200(esp_conn_id);
             http_li = 0;
             http_line[0] = '\0';
+            ipd_skip_pending = 1;
+            return;
+        }
+        if (strstr(http_line, "GET /favicon")) {
+            send_no_content(esp_conn_id);
+            http_li = 0;
+            http_line[0] = '\0';
+            ipd_skip_pending = 1;
             return;
         }
         if (strstr(http_line, "GET / ") || strstr(http_line, "GET /index") || strstr(http_line, "GET / HTTP")) {
-            send_upload_page(0);
+            send_upload_page(esp_conn_id);
             http_li = 0;
             http_line[0] = '\0';
+            ipd_skip_pending = 1;
             return;
         }
 
-        /* 流式匹配 "content-length:"（大小写不敏感），不依赖 http_line 完整 */
+        /* 流式匹配 "content-length:"（大小写不敏感） */
         char cc = c;
         if (cc >= 'A' && cc <= 'Z') cc += 32;
         if (!cl_read) {
@@ -336,45 +308,76 @@ static void feed_http_byte(char c)
             } else if (cc == ' ') {
                 /* 冒号后的空格，忽略 */
             } else {
-                /* 数字结束 */
-                if (cl_val > 0) {
-                    body_len = cl_val;
-                    fw_total = 0;
-                    fw_received = 0;
-                    fw_write_addr = FIRMWARE_TEMP_ADDR;
-                    fw_crc = 0xFFFFFFFFU;
-                    fw_buf_idx = 0;
-                    body_recv = 0;
-                    mp_state = 0;
-                    mp_hdr = 0;
-                    mp_bd_match = 0;
-                    char *bd = mystr_casestr(http_line, "boundary=");
-                    if (bd) {
-                        bd += 9;
-                        mp_boundary_len = 0;
-                        while (*bd && *bd != '\r' && *bd != '\n' && mp_boundary_len < sizeof(mp_boundary)-1) {
-                            mp_boundary[mp_boundary_len++] = *bd++;
-                        }
-                        mp_boundary[mp_boundary_len] = '\0';
-                    }
-                    transfer_state = 1;
-                    http_li = 0;
-                    http_line[0] = '\0';
-                }
                 cl_read = 0;
                 clm = 0;
             }
         }
 
+        /* 流式匹配 "x-total-size:"（上传总字节数，用于整体进度） */
+        if (!ts_read) {
+            if (cc == tspat[tsm]) {
+                tsm++;
+                if (tspat[tsm] == '\0') {
+                    ts_read = 1;
+                    ts_val = 0;
+                }
+            } else {
+                tsm = (cc == tspat[0]) ? 1 : 0;
+            }
+        } else {
+            if (cc >= '0' && cc <= '9') {
+                ts_val = ts_val * 10U + (uint32_t)(cc - '0');
+            } else if (cc == ' ') {
+                /* 冒号后的空格，忽略 */
+            } else {
+                if (ts_val > 0) total_expected = ts_val;
+                ts_read = 0;
+                tsm = 0;
+            }
+        }
+
+        /* 头结束符 \r\n\r\n：此后才进入 body 阶段（不再把空行字节当 body） */
+        if (c == '\r' && hdr_crlf == 0) hdr_crlf = 1;
+        else if (c == '\n' && hdr_crlf == 1) hdr_crlf = 2;
+        else if (c == '\r' && hdr_crlf == 2) hdr_crlf = 3;
+        else if (c == '\n' && hdr_crlf == 3) {
+            hdr_crlf = 0;
+            if (cl_val > 0) {
+                body_len = cl_val;
+                body_recv = 0;
+                cl_val = 0;
+                transfer_state = 1;
+                http_li = 0;
+                http_line[0] = '\0';
+            }
+        } else {
+            hdr_crlf = 0;
+        }
+
         if (http_li >= sizeof(http_line) - 1) {
-            /* header 缓冲满：仅用于 GET/boundary 检测，满了循环覆盖 */
+            /* header 缓冲满：仅用于 GET 检测，满了循环覆盖 */
             http_li = 0;
             http_line[0] = '\0';
         }
     } else if (body_recv < body_len) {
-        /* ── body 阶段：转 multipart 剥离 + 固件写入 ── */
-        (void)feed_fw_byte(c);
+        /* ── body 阶段：写固件块。块收完后发 200，等待下一块 ── */
+        if (feed_fw_byte(c)) {
+            send_200(esp_conn_id);
+        }
     }
+}
+
+/* 返回 200 OK（分块上传每块完成后，让浏览器发下一块）。
+ * 必须带 Content-Length，否则 HTTP/1.1 浏览器会等连接关闭才认为响应结束，
+ * 导致 XHR 的 onload 不触发、下一块永远不发送。 */
+static void send_200(int conn_id)
+{
+    const char *resp = "HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+    char cmd[64];
+    sprintf(cmd, "AT+CIPSEND=%d,%d", conn_id, (int)strlen(resp));
+    ESP_Send(cmd);
+    ESP_WaitResponse(">", 500);
+    ESP_SendRaw(resp, strlen(resp));
 }
 
 /* 返回 204 No Content（favicon 等请求，让浏览器立即完成） */
@@ -399,16 +402,29 @@ static void send_upload_page(int conn_id)
         "<link rel=icon href=data:,>"
         "<style>body{font-family:Arial;margin:20px;background:#1a1a2e;color:#fff;text-align:center}"
         ".box{background:#16213e;border-radius:15px;padding:30px;max-width:400px;margin:auto}"
-        "input{width:100%;padding:15px;margin:20px 0;background:#0f3460;border:2px dashed #e94560;color:#fff;box-sizing:border-box}"
-        "button{background:#e94560;color:#fff;border:none;padding:15px 40px;border-radius:10px;font-size:18px;cursor:pointer}</style>"
+"input{width:100%;padding:15px;margin:20px 0;background:#0f3460;border:2px dashed #e94560;color:#fff;box-sizing:border-box}"
+        "button{background:#e94560;color:#fff;border:none;padding:15px 40px;border-radius:10px;font-size:18px;cursor:pointer}"
+        "</style>"
         "<h2>Firmware Update</h2>"
         "<div class=box>"
-        "<form method=POST action=/upload enctype=multipart/form-data>"
-        "<input type=file name=firmware accept=.bin required>"
-        "<button type=submit>UPLOAD & UPDATE</button>"
-        "</form>"
-        "<p>Uploading... screen shows progress, then device restarts</p>"
-        "</div></html>";
+        "<input type=file id=i accept=.bin>"
+        "<button onclick=u()>UPLOAD & UPDATE</button>"
+        "<p id=m></p>"
+        "</div><script>"
+        "function u(){"
+        "var i=document.getElementById('i');if(!i.files[0]){alert('select file');return;}"
+        "var f=i.files[0],CH=1024,off=0;"
+        "function next(){"
+        "if(off>=f.size){var d=new XMLHttpRequest();d.open('GET','/done',true);d.send();return;}"
+        "var b=f.slice(off,off+CH);"
+        "var x=new XMLHttpRequest();x.open('POST','/upload',true);"
+        "x.setRequestHeader('Content-Type','application/octet-stream');"
+        "x.setRequestHeader('X-Total-Size',f.size);"
+        "x.onload=function(){off+=b.size;next();};"
+        "x.onerror=function(){document.getElementById('m').innerHTML='block error';};"
+        "x.send(b);}"
+        "next();}"
+        "</script></html>";
     char cmd[64];
     sprintf(cmd, "AT+CIPSEND=%d,%d", conn_id, (int)strlen(page));
     ESP_Send(cmd);
@@ -417,47 +433,56 @@ static void send_upload_page(int conn_id)
     ESP_SendRaw(page, strlen(page));
 }
 
-static void finish_upload(int conn_id)
+/* 强制结束上传（超时兜底）：flush 并标记完成 */
+void BL_ESP01S_FinishTransfer(void)
 {
-    (void)conn_id;
     flush_fw_buffer();
-
-    /* multipart body 含 boundary 头尾；真实固件大小 = 已写入的固件字节数 */
     fw_total = fw_received;
     transfer_state = 2;
-
-    const char *resp = "HTTP/1.1 200 OK\r\n\r\nUpdate OK! Restarting...";
-    char cmd[64];
-    sprintf(cmd, "AT+CIPSEND=%d,%d", conn_id, (int)strlen(resp));
-    ESP_Send(cmd);
-    ESP_WaitResponse(">", 1000);
-    ESP_SendRaw(resp, strlen(resp));
-
-    /* 屏幕状态由 bl_main 控制（DOWNLOAD OK / WRITE TO MCU），这里只更新进度 */
     BL_TFT_ShowProgressBar(100);
+}
+
+/* 中止上传（超时无新数据等异常）：标记错误，不进入引导，
+ * 避免把残缺固件刷进 APP 分区导致启动黑屏。 */
+void BL_ESP01S_AbortTransfer(void)
+{
+    transfer_error = 1;
 }
 
 void BL_ESP01S_Process(void)
 {
-    static uint8_t in_ipd = 0;      /* 1=正在收 +IPD 分片数据 */
-    static uint32_t ipd_remain = 0; /* 当前分片剩余数据字节 */
-    static char pfx[20];
-    static uint8_t pfx_len = 0;
     uint8_t byte;
 
+    /* 乐鑫官方 AT 固件：+IPD,<id>,<len>:<data> 标准格式。
+     * 正确剥离前缀，只把数据交给 HTTP 层。 */
     while (EspUart_ReadByte(&byte) != 0) {
         char c = (char)byte;
 
         /* ── 正在收 +IPD 分片数据：直接交给 HTTP 层 ── */
         if (in_ipd) {
-            ipd_remain--;
+            /* GET 已处理完（页面/图标/完成）：本分片剩余字节全部丢弃，
+             * 重新等待下一个 +IPD 前缀，避免把上一请求尾部误当下一请求数据。 */
+            if (ipd_skip_pending) {
+                ipd_skip_pending = 0;
+                in_ipd = 0;
+                ipd_remain = 0;
+                pfx_len = 0;
+                continue;
+            }
             feed_http_byte(c);
+            ipd_remain--;
             if (ipd_remain == 0) in_ipd = 0;
             continue;
         }
 
+        /* GET 处理完但此刻不在分片内：清掉跳过标记，等下一个 +IPD */
+        if (ipd_skip_pending) {
+            ipd_skip_pending = 0;
+            continue;
+        }
+
         /* ── 等待 +IPD,<id>,<len>: 前缀 ── */
-        if (pfx_len == 0 && c != '+') continue;   /* 忽略非 + 开头 */
+        if (pfx_len == 0 && c != '+') continue;   /* 忽略非 + 开头（含官方调试输出） */
 
         if (pfx_len < 4) {
             /* 匹配 "+IPD" */
@@ -475,7 +500,7 @@ void BL_ESP01S_Process(void)
         if (pfx_len < sizeof(pfx) - 1) pfx[pfx_len++] = c;
         pfx[pfx_len] = '\0';
         if (c == ':') {
-            /* 解析 len：最后一个逗号后到冒号 */
+            /* 解析 len（最后一个逗号后）和 conn_id（第一个逗号前） */
             char *lc = pfx;
             char *tail = 0;
             while (*lc) { if (*lc == ',') tail = lc; lc++; }
@@ -485,6 +510,11 @@ void BL_ESP01S_Process(void)
                 while (*p >= '0' && *p <= '9') { len = len * 10U + (uint32_t)(*p - '0'); p++; }
                 ipd_remain = len;
                 in_ipd = 1;
+                /* conn_id: "+IPD," 后第一个数字 */
+                char *q = pfx + 5;
+                int id = 0;
+                while (*q >= '0' && *q <= '9') { id = id * 10 + (*q - '0'); q++; }
+                esp_conn_id = id;
             }
             pfx_len = 0;
         } else if (pfx_len >= sizeof(pfx) - 1) {

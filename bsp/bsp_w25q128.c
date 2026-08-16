@@ -11,7 +11,7 @@
 #define W25_CMD_READ_JEDEC_ID UINT8_C(0x9F)
 
 #define W25_SPI_TIMEOUT_MS     10U
-#define W25_PROGRAM_TIMEOUT_MS 10U
+#define W25_PROGRAM_TIMEOUT_MS 50U
 #define W25_ERASE_TIMEOUT_MS   3000U
 
 static W25Q128_ServiceFn service_callback;

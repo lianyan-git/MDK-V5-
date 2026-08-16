@@ -7,6 +7,7 @@
 #include "bsp_w25q128.h"
 #include "bsp_esp_uart.h"
 #include "board.h"
+#include "pin_config.h"
 #include "system_time.h"
 #include "stm32f10x.h"
 #include <string.h>
@@ -26,9 +27,9 @@ int main(void)
 #define ERASE_PROGRESS_PAGES        16
 #define FLASH_CHUNK                 256U
 
-static uint32_t fw_received = 0;
 static uint32_t fw_total = 0;
 static uint32_t fw_crc = 0;
+static uint32_t fw_start = 0;   /* 固件在外部 Flash 中的偏移（搜索向量表定位） */
 
 static int erase_app_area_with_progress(void)
 {
@@ -61,46 +62,40 @@ static int stage_erase(void)
     return 0;
 }
 
-static uint32_t crc32_bytes(uint32_t crc, const uint8_t *data, uint32_t len)
-{
-    while (len-- != 0U) {
-        crc ^= *data++;
-        for (uint8_t j = 0; j < 8; j++) crc = (crc >> 1) ^ (0xEDB88320 & -(crc & 1));
-    }
-    return crc;
-}
-
-static int validate_firmware_vectors(uint32_t image_size)
-{
-    uint8_t v[8];
-    uint32_t sp, pc;
-    if (W25Q128_Read(FIRMWARE_TEMP_ADDR, v, 8U) != W25Q128_OK) return -1;
-    sp = (uint32_t)v[0] | ((uint32_t)v[1] << 8) | ((uint32_t)v[2] << 16) | ((uint32_t)v[3] << 24);
-    pc = (uint32_t)v[4] | ((uint32_t)v[5] << 8) | ((uint32_t)v[6] << 16) | ((uint32_t)v[7] << 24);
-    (void)image_size;
-    if ((sp & 0x2FFE0000) != 0x20000000) return -1;
-    if ((pc & 0xFF000000) != 0x08000000) return -1;
-    return 0;
-}
-
 static int verify_staged_image(void)
 {
     uint8_t buf[FLASH_CHUNK];
     uint32_t offset = 0U;
-    uint32_t crc = 0xFFFFFFFFU;
+    int found = 0;
 
-    if (fw_total > APP_SIZE) return -1;
-    if (validate_firmware_vectors(fw_total) != 0) return -1;
-    while (offset < fw_total) {
-        uint32_t length = fw_total - offset;
-        if (length > sizeof(buf)) length = sizeof(buf);
+    /* 在外部 Flash 中搜索固件向量表（SP=0x2000xxxx + PC=0x0800xxxx）定位固件开头。
+     * 用户要求不校验大小/CRC，只要引导到指定地址。 */
+    fw_start = 0;
+    while (offset + 8 <= fw_total) {
+        uint32_t read_len = offset + FLASH_CHUNK <= fw_total ? FLASH_CHUNK : (fw_total - offset);
+        if (read_len > sizeof(buf)) read_len = sizeof(buf);
         Watchdog_Kick();
-        if (W25Q128_Read(FIRMWARE_TEMP_ADDR + offset, buf, length) != W25Q128_OK) return -1;
-        crc = crc32_bytes(crc, buf, length);
-        offset += length;
+        if (W25Q128_Read(FIRMWARE_TEMP_ADDR + offset, buf, read_len) != W25Q128_OK) return -1;
+
+        for (uint32_t i = 0; i + 8 <= read_len; i++) {
+            uint32_t sp = (uint32_t)buf[i] | ((uint32_t)buf[i+1] << 8) | ((uint32_t)buf[i+2] << 16) | ((uint32_t)buf[i+3] << 24);
+            uint32_t pc = (uint32_t)buf[i+4] | ((uint32_t)buf[i+5] << 8) | ((uint32_t)buf[i+6] << 16) | ((uint32_t)buf[i+7] << 24);
+            if ((sp & 0x2FFE0000) == 0x20000000 && (pc & 0xFF000000) == 0x08000000) {
+                fw_start = offset + i;
+                found = 1;
+                break;
+            }
+        }
+        if (found) break;
+        offset += read_len;
     }
-    crc = ~crc;
-    return (crc == fw_crc) ? 0 : -1;
+    if (!found) return -1;   /* 没找到向量表：固件开头丢失 */
+
+    /* 固件大小 = 固件开头到数据末尾（含尾部元数据，不影响引导）。
+     * 限制不超过 APP 分区大小。 */
+    fw_total = fw_total - fw_start;
+    if (fw_total > APP_SIZE) fw_total = APP_SIZE;
+    return 0;
 }
 
 static int flash_staged_to_app(void)
@@ -109,12 +104,15 @@ static int flash_staged_to_app(void)
     uint32_t offset = 0U;
     uint8_t last_pct = 0;
 
+    /* 固件大小不超过 APP 分区（尾部可能含 multipart 元数据，截断到 APP_SIZE） */
+    if (fw_total > APP_SIZE) fw_total = APP_SIZE;
+
     if (erase_app_area_with_progress() != 0) return -1;
     while (offset < fw_total) {
         uint32_t length = fw_total - offset;
         if (length > sizeof(buf)) length = sizeof(buf);
         Watchdog_Kick();
-        if (W25Q128_Read(FIRMWARE_TEMP_ADDR + offset, buf, length) != W25Q128_OK) return -1;
+        if (W25Q128_Read(FIRMWARE_TEMP_ADDR + fw_start + offset, buf, length) != W25Q128_OK) return -1;
         if (Flash_Write(APP_ADDR + offset, buf, length) != 0) return -1;
         offset += length;
         /* 拷贝进度：每 10% 刷新一次 */
@@ -167,6 +165,29 @@ void BootloaderV2_Run(void)
 
 void BootloaderV2_EnterCopyMode(UpgradeFlag_t *flag)
 {
+    /* 拷贝模式不需要 ESP 联网：先初始化 SPI1（W25Q128_Init 会调用 Spi1Bus_Init），
+     * 否则 BL_TFT_Init / verify_staged_image 的 SPI 操作都不工作 → 黑屏。 */
+    W25Q128_SetServiceCallback(Watchdog_Kick);
+    W25Q128_Init();
+
+    /* 关闭 ESP01S 电源（P-MOS 高=关断）。注意：必须先初始化 ESP_EN 引脚为输出，
+     * 否则 GPIO_SetBits 无效；EspUart_Init 会配置该引脚及 USART1。 */
+    EspUart_Init();
+
+    /* PA9（UART TX）改推挽输出低电平，主动拉低 ESP RX 引脚，
+     * 克服 ESP 内部上拉电阻（40-50kΩ 到 VCC）导致的回灌供电。
+     * 仅输入浮空不够，ESP 内部上拉会通过 RX 引脚向 VCC 灌电。 */
+    {
+        GPIO_InitTypeDef gpio;
+        gpio.GPIO_Pin = PIN_ESP_TX_PIN;
+        gpio.GPIO_Mode = GPIO_Mode_Out_PP;
+        gpio.GPIO_Speed = GPIO_Speed_2MHz;
+        GPIO_Init(PIN_ESP_TX_PORT, &gpio);
+        GPIO_ResetBits(PIN_ESP_TX_PORT, PIN_ESP_TX_PIN);
+    }
+
+    EspUart_SetEnabled(0);
+
     /* 显示完整界面 + 标题 */
     BL_TFT_Init();
     BL_TFT_ShowUpgradeScreen();
@@ -226,7 +247,6 @@ void BootloaderV2_EnterUpgradeMode(void)
     BL_TFT_ShowStatus("DOWNLOAD TO QFLASH");
 
     for (retry = 0; retry < MAX_RETRY; retry++) {
-        fw_received = 0;
         fw_total = 0;
         fw_crc = 0;
 
@@ -235,15 +255,16 @@ void BootloaderV2_EnterUpgradeMode(void)
         }
 
         BL_ESP01S_ResetTransfer();
-        BL_TFT_ShowProgressBar(0);
         BL_TFT_ShowStatus("WAIT");
 
-        uint32_t last_progress_tick = 0;
         uint32_t last_watchdog = SystemTime_Millis();
-        uint8_t last_progress_step = 0;   /* 已显示的 10% 档位 */
-        uint8_t shown_wait = 0;
+        uint32_t last_progress_tick = 0;
+        uint32_t last_rx_time = 0;
+        uint32_t last_recv = 0;
+        uint8_t last_progress_step = 0;
         int transfer_done = 0;
 
+        /* 上传循环：显示接收进度条（每 10% 刷新一次） */
         while (!transfer_done) {
             uint32_t now = SystemTime_Millis();
             if ((int32_t)(now - last_watchdog) >= 100) {
@@ -253,23 +274,42 @@ void BootloaderV2_EnterUpgradeMode(void)
 
             BL_ESP01S_Process();
 
+            /* 跟踪最后收到数据的时间（用于超时完成） */
+            uint32_t recv_now = BL_ESP01S_GetReceivedSize();
+            if (recv_now != last_recv) {
+                last_recv = recv_now;
+                last_rx_time = now;
+            }
+
             int esp_state = BL_ESP01S_GetTransferState();
             if (esp_state == 1) {
-                fw_received = BL_ESP01S_GetReceivedSize();
                 fw_total = BL_ESP01S_GetTotalSize();
-                if (fw_total > 0) {
-                    uint8_t progress = (uint8_t)(fw_received * 100U / fw_total);
+                uint32_t recv = BL_ESP01S_GetReceivedSize();
+                uint32_t total = BL_ESP01S_GetTotalFirmwareSize();   /* X-Total-Size 总字节数 */
+                if (total > 0) {
+                    uint8_t progress = (uint8_t)(recv * 100U / total);
                     uint8_t step = (uint8_t)(progress / 10);
-                    /* 每达成 10% 才刷新一次屏幕，减少与 Flash 写入的 SPI 干涉 */
                     if (step != last_progress_step && (int32_t)(now - last_progress_tick) > 500) {
                         last_progress_step = step;
                         last_progress_tick = now;
                         BL_TFT_ShowProgressBar(progress);
                         char buf[24];
                         sprintf(buf, "DL %d%%", progress);
-                        BL_TFT_ShowStatus(buf);   /* 状态区大字显示进度 */
+                        BL_TFT_ShowStatus(buf);
                     }
-                    shown_wait = 1;
+                }
+                /* 超时无新数据：如果数据已收全，直接完成（不需等浏览器 /done）；
+                 * 否则中止重试。 */
+                if (last_recv > 0 && (int32_t)(now - last_rx_time) > 10000) {
+                    uint32_t exp = BL_ESP01S_GetTotalFirmwareSize();
+                    if (exp > 0 && last_recv >= exp) {
+                        BL_ESP01S_FinishTransfer();
+                        transfer_done = 1;
+                        break;
+                    }
+                    BL_ESP01S_AbortTransfer();
+                    transfer_done = 1;
+                    break;
                 }
             } else if (esp_state == 2) {
                 transfer_done = 1;
@@ -277,20 +317,19 @@ void BootloaderV2_EnterUpgradeMode(void)
                 BL_TFT_ShowError("Upload Error!");
                 Delay_ms(2000);
                 break;
-            } else {
-                /* 一直没进入接收：提示等待 */
-                if (!shown_wait && (int32_t)(now - last_progress_tick) > 3000) {
-                    last_progress_tick = now;
-                    BL_TFT_ShowStatus("NO DATA...");
-                }
             }
         }
 
         if (!transfer_done) continue;
+        if (BL_ESP01S_GetTransferState() < 0) {
+            /* 超时/异常中止：残缺固件不得进入引导，直接重试 */
+            BL_TFT_ShowError("Upload Error!");
+            Delay_ms(2000);
+            continue;
+        }
 
         /* 上传完成：从 bl_esp01s 重新读取真实固件大小（multipart 剥离后的大小） */
         fw_total = BL_ESP01S_GetTotalSize();
-        fw_received = BL_ESP01S_GetReceivedSize();
         fw_crc = BL_ESP01S_GetFirmwareCrc32();
 
         BL_TFT_ShowStatus("DOWNLOAD OK");
@@ -325,11 +364,13 @@ void BootloaderV2_EnterUpgradeMode(void)
             uint8_t v0[8];
             char buf[48];
             uint32_t sp;
+            uint32_t clen = BL_ESP01S_GetTotalFirmwareSize();
+            uint32_t got  = BL_ESP01S_GetReceivedSize();
             if (W25Q128_Read(FIRMWARE_TEMP_ADDR, v0, 8U) == W25Q128_OK) {
                 sp = (uint32_t)v0[0] | ((uint32_t)v0[1] << 8) | ((uint32_t)v0[2] << 16) | ((uint32_t)v0[3] << 24);
-                sprintf(buf, "VFAIL %lu SP%08X", fw_total, sp);
+                sprintf(buf, "CL%lu GOT%lu SP%08X", clen, got, sp);
             } else {
-                sprintf(buf, "VFAIL %lu RDERR", fw_total);
+                sprintf(buf, "CL%lu GOT%lu RDERR", clen, got);
             }
             BL_TFT_ShowStatus(buf);
             Delay_ms(5000);
@@ -355,24 +396,14 @@ int BootloaderV2_WriteFirmware(uint32_t offset, uint8_t *data, uint16_t len)
 
 int BootloaderV2_VerifyFirmware(void)
 {
+    /* 用户要求不校验大小/CRC，只验证向量表有效即可引导 */
     uint32_t sp = *(__IO uint32_t*)APP_ADDR;
     if ((sp & 0x2FFE0000) != 0x20000000) return -1;
 
     uint32_t pc = *(__IO uint32_t*)(APP_ADDR + 4);
     if ((pc & 0xFF000000) != 0x08000000) return -1;
 
-    uint8_t buf[FLASH_CHUNK];
-    uint32_t offset = 0U;
-    uint32_t crc = 0xFFFFFFFFU;
-    while (offset < fw_total) {
-        uint32_t length = fw_total - offset;
-        if (length > sizeof(buf)) length = sizeof(buf);
-        Watchdog_Kick();
-        crc = crc32_bytes(crc, (const uint8_t*)(APP_ADDR + offset), length);
-        offset += length;
-    }
-    crc = ~crc;
-    return (crc == fw_crc) ? 0 : -1;
+    return 0;
 }
 
 int BootloaderV2_VerifyApp(void)
@@ -394,6 +425,28 @@ __asm void set_msp(uint32_t sp)
 
 void BootloaderV2_JumpToApp(void)
 {
+    /* 跳转前关闭 ESP01S 电源。先拉低 PA9（UART TX）→ 主动拉低 ESP RX，
+     * 克服 ESP 内部上拉电阻（40-50kΩ 到 VCC）导致的回灌供电。
+     * 仅输入浮空不够——ESP 内部上拉会通过 RX 引脚向 VCC 灌电。 */
+    {
+        GPIO_InitTypeDef gpio;
+        RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+
+        /* PA9 推挽输出低电平，克服 ESP RX 内部上拉 */
+        gpio.GPIO_Pin = PIN_ESP_TX_PIN;
+        gpio.GPIO_Mode = GPIO_Mode_Out_PP;
+        gpio.GPIO_Speed = GPIO_Speed_2MHz;
+        GPIO_Init(PIN_ESP_TX_PORT, &gpio);
+        GPIO_ResetBits(PIN_ESP_TX_PORT, PIN_ESP_TX_PIN);
+
+        /* ESP_EN 置高，关断 P-MOS */
+        gpio.GPIO_Pin = PIN_ESP_EN_PIN;
+        gpio.GPIO_Mode = GPIO_Mode_Out_PP;
+        gpio.GPIO_Speed = GPIO_Speed_2MHz;
+        GPIO_Init(PIN_ESP_EN_PORT, &gpio);
+        GPIO_SetBits(PIN_ESP_EN_PORT, PIN_ESP_EN_PIN);
+    }
+
     __disable_irq();
     RCC_DeInit();
     SysTick->CTRL = 0;
