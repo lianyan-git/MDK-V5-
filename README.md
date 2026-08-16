@@ -164,6 +164,13 @@ Bootloader 每次上电时：
 
 ### 2026-08-16
 
+#### 新增
+- Bootloader 完整 OTA 升级链路：ESP01S AP 模式 + Web 网页上传固件（两阶段：下载到外部 Flash → 拷贝到 App 分区）
+- 上传固件暂存外部 Flash（W25Q128）→ 校验（CRC32 + 向量表）→ 刷入 App 分区
+- App 端 Web 页面"固件升级"按钮：写入升级标志并复位跳转 Bootloader
+- `bl_tft.c` 增加真实 5×7 点阵字体，屏幕可显示 AP 名称/密码/IP/升级进度
+- 屏幕适配 1.14 寸 135×240 ST7789 横屏（240×135），UI 完整显示标题/状态/进度/AP 信息
+
 #### 修复
 - **修复 OTA 分块上传协议**：改为 1KB 分块 POST（替代单次 multipart 大 POST），每块回 `Content-Length: 0` 让浏览器立即完成 XHR，解决"卡 10%"问题
 - **修复 header/body 边界**：`\r\n\r\n` 后进入 body 阶段，避免把换行符当固件数据写入
