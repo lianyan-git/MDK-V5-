@@ -149,14 +149,17 @@ void BootloaderV2_Run(void)
     }
 
     /* 阶段1：无有效 App（首次刷写/测试）→ 下载模式（开 AP 收固件） */
-    if (BootloaderV2_VerifyApp() != 0) {
+    int app_valid = (BootloaderV2_VerifyApp() == 0);
+    if (!app_valid) {
         BootloaderV2_EnterUpgradeMode();
+        /* 下载模式只在刷写成功并复位后才返回（NVIC_SystemReset），
+         * 或校验失败重试 3 次后死循环——正常不会走到这里。 */
+        app_valid = (BootloaderV2_VerifyApp() == 0);
     }
 
-    if (BootloaderV2_VerifyApp() == 0) {
+    if (app_valid) {
         BootloaderV2_JumpToApp();
     }
-
     BootloaderV2_ShowError();
     for (;;) {
         Watchdog_Kick();
@@ -469,7 +472,9 @@ void BootloaderV2_ShowError(void)
 
 static void Delay_ms(uint16_t ms)
 {
-    for (volatile uint32_t i = 0; i < ms * 7200; i++) {
+    /* 每毫秒约 SystemCoreClock/10000 次循环（每条循环约 10 周期） */
+    uint32_t per_ms = (SystemCoreClock + 9999U) / 10000U;
+    for (volatile uint32_t i = 0; i < (uint32_t)ms * per_ms; i++) {
         if ((i & 0x1FFFFU) == 0U) Watchdog_Kick();
     }
 }

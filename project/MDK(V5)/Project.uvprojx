@@ -892,7 +892,7 @@
             <v6Rtti>0</v6Rtti>
             <VariousControls>
               <MiscControls />
-              <Define>STM32F10X_MD,USE_STDPERIPH_DRIVER,BOOTLOADER_BUILD</Define>
+              <Define>STM32F10X_MD,USE_STDPERIPH_DRIVER,VECT_TAB_OFFSET=0x5000</Define>
               <Undefine />
               <IncludePath>..\..\app;..\..\board;..\..\bootloader;..\..\bsp;..\..\shared;..\..\libraries\CMSIS\CM3\CoreSupport;..\..\libraries\CMSIS\CM3\DeviceSupport\ST\STM32F10x;..\..\libraries\STM32F10x_StdPeriph_Driver\inc;..\..\module</IncludePath>
             </VariousControls>
@@ -1038,6 +1038,26 @@
               <FileType>1</FileType>
               <FilePath>..\..\module\ota_update_controller.c</FilePath>
             </File>
+            <File>
+              <FileName>mod_ota.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\module\mod_ota.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_web_server.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\module\mod_web_server.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_wifi_config.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\module\mod_wifi_config.c</FilePath>
+            </File>
+            <File>
+              <FileName>mod_wifi_manager.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\module\mod_wifi_manager.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
@@ -1084,6 +1104,51 @@
               <FilePath>..\..\bsp\bsp_esp_uart_stm32.c</FilePath>
             </File>
             <File>
+              <FileName>bsp_aht20.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\bsp\bsp_aht20.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_buzzer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\bsp\bsp_buzzer.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_cs1237.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\bsp\bsp_cs1237.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_encoder.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\bsp\bsp_encoder.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_fan.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\bsp\bsp_fan.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_ntc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\bsp\bsp_ntc.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_ptc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\bsp\bsp_ptc.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_rgb_led.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\bsp\bsp_rgb_led.c</FilePath>
+            </File>
+            <File>
+              <FileName>bsp_stepper.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\bsp\bsp_stepper.c</FilePath>
+            </File>
+            <File>
               <FileName>bsp_system_reset_stm32.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\bsp\bsp_system_reset_stm32.c</FilePath>
@@ -1124,9 +1189,69 @@
               <FilePath>..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_flash.c</FilePath>
             </File>
             <File>
+              <FileName>stm32f10x_adc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_adc.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f10x_bkp.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_bkp.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f10x_can.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_can.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f10x_dma.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_dma.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f10x_exti.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_exti.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f10x_i2c.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_i2c.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f10x_pwr.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_pwr.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f10x_rtc.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_rtc.c</FilePath>
+            </File>
+            <File>
+              <FileName>stm32f10x_tim.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_tim.c</FilePath>
+            </File>
+            <File>
               <FileName>stm32f10x_usart.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_usart.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>App</GroupName>
+          <Files>
+            <File>
+              <FileName>system_config.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\app\system_config.c</FilePath>
+            </File>
+            <File>
+              <FileName>ui_manager.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\app\ui_manager.c</FilePath>
             </File>
           </Files>
         </Group>

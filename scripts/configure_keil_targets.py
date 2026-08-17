@@ -41,6 +41,7 @@ TARGETS = {
         "output": "dryer_bootloader",
         "entry_name": "bl_main.c",
         "entry_path": r"..\..\bootloader\bl_main.c",
+        "defines": "STM32F10X_MD,USE_STDPERIPH_DRIVER,BOOTLOADER_BUILD",
         "sources": (
             ("Bootloader", "bl_esp01s.c", 1, r"..\..\bootloader\bl_esp01s.c"),
             ("Bootloader", "bl_tft.c", 1, r"..\..\bootloader\bl_tft.c"),
@@ -56,8 +57,21 @@ TARGETS = {
         "output": "dryer_app",
         "entry_name": "main.c",
         "entry_path": r"..\..\app\main.c",
+        "defines": "STM32F10X_MD,USE_STDPERIPH_DRIVER,VECT_TAB_OFFSET=0x5000",
         "sources": (
+            ("App", "system_config.c", 1, r"..\..\app\system_config.c"),
+            ("App", "ui_manager.c", 1, r"..\..\app\ui_manager.c"),
             ("BSP", "bsp_esp_uart_stm32.c", 1, r"..\..\bsp\bsp_esp_uart_stm32.c"),
+            ("BSP", "bsp_aht20.c", 1, r"..\..\bsp\bsp_aht20.c"),
+            ("BSP", "bsp_buzzer.c", 1, r"..\..\bsp\bsp_buzzer.c"),
+            ("BSP", "bsp_cs1237.c", 1, r"..\..\bsp\bsp_cs1237.c"),
+            ("BSP", "bsp_encoder.c", 1, r"..\..\bsp\bsp_encoder.c"),
+            ("BSP", "bsp_fan.c", 1, r"..\..\bsp\bsp_fan.c"),
+            ("BSP", "bsp_ntc.c", 1, r"..\..\bsp\bsp_ntc.c"),
+            ("BSP", "bsp_ptc.c", 1, r"..\..\bsp\bsp_ptc.c"),
+            ("BSP", "bsp_rgb_led.c", 1, r"..\..\bsp\bsp_rgb_led.c"),
+            ("BSP", "bsp_stepper.c", 1, r"..\..\bsp\bsp_stepper.c"),
+            ("BSP", "bsp_system_reset_stm32.c", 1, r"..\..\bsp\bsp_system_reset_stm32.c"),
             ("Module", "esp_at.c", 1, r"..\..\module\esp_at.c"),
             ("Module", "http_server.c", 1, r"..\..\module\http_server.c"),
             ("Module", "esp_http_bridge.c", 1, r"..\..\module\esp_http_bridge.c"),
@@ -65,7 +79,19 @@ TARGETS = {
             ("Module", "ota_http.c", 1, r"..\..\module\ota_http.c"),
             ("Module", "ota_staging.c", 1, r"..\..\module\ota_staging.c"),
             ("Module", "ota_update_controller.c", 1, r"..\..\module\ota_update_controller.c"),
-            ("BSP", "bsp_system_reset_stm32.c", 1, r"..\..\bsp\bsp_system_reset_stm32.c"),
+            ("Module", "mod_ota.c", 1, r"..\..\module\mod_ota.c"),
+            ("Module", "mod_web_server.c", 1, r"..\..\module\mod_web_server.c"),
+            ("Module", "mod_wifi_config.c", 1, r"..\..\module\mod_wifi_config.c"),
+            ("Module", "mod_wifi_manager.c", 1, r"..\..\module\mod_wifi_manager.c"),
+            ("StdPeriph", "stm32f10x_adc.c", 1, r"..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_adc.c"),
+            ("StdPeriph", "stm32f10x_bkp.c", 1, r"..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_bkp.c"),
+            ("StdPeriph", "stm32f10x_can.c", 1, r"..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_can.c"),
+            ("StdPeriph", "stm32f10x_dma.c", 1, r"..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_dma.c"),
+            ("StdPeriph", "stm32f10x_exti.c", 1, r"..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_exti.c"),
+            ("StdPeriph", "stm32f10x_i2c.c", 1, r"..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_i2c.c"),
+            ("StdPeriph", "stm32f10x_pwr.c", 1, r"..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_pwr.c"),
+            ("StdPeriph", "stm32f10x_rtc.c", 1, r"..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_rtc.c"),
+            ("StdPeriph", "stm32f10x_tim.c", 1, r"..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_tim.c"),
             ("StdPeriph", "stm32f10x_usart.c", 1, r"..\..\libraries\STM32F10x_StdPeriph_Driver\src\stm32f10x_usart.c"),
         ),
     },
@@ -116,6 +142,7 @@ def configure_project():
         target = copy.deepcopy(template)
         set_text(target, "./TargetName", name)
         set_text(target, ".//Cpu", f'IRAM(0x20000000,0x00005000) IROM({config["start"]},{config["size"]}) CPUTYPE("Cortex-M3") CLOCK(12000000) ELITTLE')
+        set_text(target, ".//Define", config["defines"])
         flash_driver = require(target, ".//FlashDriverDll")
         flash_driver.text = flash_driver.text.replace("-FL020000", "-FL010000")
         set_text(target, ".//TargetStatus/InvalidFlash", "0")

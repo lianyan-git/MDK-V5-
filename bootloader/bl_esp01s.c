@@ -78,7 +78,7 @@ static void ESP_FlushRX(void)
 
 static int ESP_WaitResponse(const char *expected, uint32_t timeout_ms)
 {
-    char buf[80];
+    char buf[256];
     uint16_t bi = 0;
     uint32_t start = SystemTime_Millis();
     uint8_t byte;

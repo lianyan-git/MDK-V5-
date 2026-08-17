@@ -388,7 +388,8 @@ void BL_TFT_ShowError(const char *text) {
 }
 
 static void Delay_ms(uint16_t ms) {
-    for (volatile uint32_t i = 0; i < ms * 7200; i++) {
+    uint32_t per_ms = (SystemCoreClock + 9999U) / 10000U;
+    for (volatile uint32_t i = 0; i < (uint32_t)ms * per_ms; i++) {
         if ((i & 0x1FFFFU) == 0U) Watchdog_Kick();   /* 喂狗，避免看门狗复位 */
     }
 }
