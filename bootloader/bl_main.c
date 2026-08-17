@@ -130,6 +130,17 @@ void BootloaderV2_Run(void)
 {
     Board_EarlyInit();
 
+    /* 启动指示灯：bootloader 运行即点亮 PB6(RGB2/WS2812 白)。 */
+    {
+        GPIO_InitTypeDef g;
+        RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
+        g.GPIO_Pin = PIN_RGB2_PIN | PIN_RGB3_PIN;
+        g.GPIO_Mode = GPIO_Mode_Out_PP;
+        g.GPIO_Speed = GPIO_Speed_50MHz;
+        GPIO_Init(PIN_RGB2_PORT, &g);
+        GPIO_SetBits(PIN_RGB2_PORT, PIN_RGB2_PIN);
+    }
+
     /* 关键：从 RCC 寄存器读回实际时钟源，纠正 SystemCoreClock。
      * 若 HSE/PLL 未锁住 72MHz（比如晶振路径有异常），系统实为 HSI 8MHz，
      * 但 SystemCoreClock 编译默认是 72MHz —— 不纠正的话 USART 波特率全错。
@@ -236,20 +247,21 @@ void BootloaderV2_EnterUpgradeMode(void)
     int retry;
     int flash_ok = 0;
 
-    /* ── 先开 AP（最优先，不依赖屏幕/外部Flash）────────────────── */
-    BL_ESP01S_Init();
-    EspUart_SetEnabled(1);   /* P-MOS: 低=开，确保 ESP01S 供电 */
-    BL_ESP01S_StartAP();     /* 等 AT OK → CWMODE/CWSAP/CIPSERVER */
-
-    /* ── 之后才初始化外部Flash（用于上传暂存）。失败不再死等，仅记录。 */
+    /* ── 先初始化屏幕（SPI1 + TFT），再操作 ESP ─────────────
+     * ESP_WaitReady 是阻塞握手，若 ESP 异常会卡住；屏幕必须在此之前就绪，
+     * 否则永远黑屏、无法显示升级界面。 */
     W25Q128_SetServiceCallback(Watchdog_Kick);
     if (W25Q128_Init() == W25Q128_OK) {
         flash_ok = 1;
     }
-
-    /* ── 初始化屏幕：直接显示完整页面，状态文字表示当前阶段 ── */
     BL_TFT_Init();
     BL_TFT_ShowUpgradeScreen();
+
+    /* ── 开 AP：等 AT OK → CWMODE/CWSAP/CIPSERVER ────────── */
+    BL_ESP01S_Init();
+    EspUart_SetEnabled(1);   /* P-MOS: 低=开，确保 ESP01S 供电 */
+    BL_ESP01S_StartAP();
+
     {
         const char *ip = BL_ESP01S_GetIP();
         BL_TFT_ShowAPInfo("QiMingXing", "12345678", ip);
@@ -456,6 +468,9 @@ void BootloaderV2_JumpToApp(void)
         GPIO_Init(PIN_ESP_EN_PORT, &gpio);
         GPIO_SetBits(PIN_ESP_EN_PORT, PIN_ESP_EN_PIN);
     }
+
+    /* 熄灭 bootloader 启动指示灯，避免干扰 App 的 RGB 判断 */
+    GPIO_ResetBits(PIN_RGB2_PORT, PIN_RGB2_PIN);
 
     __disable_irq();
     RCC_DeInit();
