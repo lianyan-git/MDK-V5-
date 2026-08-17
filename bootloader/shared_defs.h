@@ -68,6 +68,7 @@
 #define UPGRADE_STATUS_UPGRADING    3   // 升级中
 #define UPGRADE_STATUS_DONE         4   // 升级完成
 #define UPGRADE_STATUS_FAILED       5   // 升级失败
+#define UPGRADE_STATUS_FORCE_BOOT   6   // 强制进入升级模式（上电长按编码器触发）
 
 typedef struct {
     uint32_t magic;             // 魔数 0x5A5A5A5A

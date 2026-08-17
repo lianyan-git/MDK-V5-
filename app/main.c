@@ -25,6 +25,7 @@
 #include "ota_metadata_store.h"
 #include "ota_update_controller.h"
 #include "ota_upload.h"
+#include "mod_ota.h"
 #include "ui_manager.h"
 #include <string.h>
 #include <stdio.h>
@@ -94,6 +95,25 @@ int main(void)
 
     Board_Init();
     Watchdog_Init();   /* App 自启看门狗，不依赖 Bootloader */
+
+    /* 上电长按编码器按钮(约1s) → 强制进入 Bootloader 下载模式（开 AP 收固件）。
+     * 必须在任何阻塞外设初始化之前检测，避免传感器 init 卡住导致无法进入升级。 */
+    {
+        Encoder_Init();
+        int force_boot = 0;
+        uint32_t t0 = SystemTime_Millis();
+        while ((int32_t)(SystemTime_Millis() - t0) < 3000) {
+            Watchdog_Kick();
+            Encoder_Process();
+            if (Encoder_GetEvent() == ENC_EVT_LONG_PRESS) {
+                force_boot = 1;
+                break;
+            }
+        }
+        if (force_boot) {
+            OTA_EnterBootloader();   /* 写 FORCE_BOOT 标志并复位，不会返回 */
+        }
+    }
 
     /* 初始化屏幕并立即点亮：Bootloader 跳转后 RCC_DeInit 已重置所有外设，
      * 必须最先初始化 SPI1 + ST7789 + 背光，否则 TFT_FillScreen 等绘图无效 → 黑屏。

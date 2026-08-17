@@ -80,6 +80,25 @@ void OTA_TriggerUpgrade(void) {
     NVIC_SystemReset();
 }
 
+/* 强制进入 Bootloader 下载模式（不刷写，直接开 AP 收固件）。
+ * 用于上电长按编码器等场景。 */
+void OTA_EnterBootloader(void) {
+    UpgradeFlag_t flag = {
+        .magic = UPGRADE_MAGIC,
+        .version = 0x00020000,
+        .firmware_size = 0,
+        .firmware_crc32 = 0,
+        .target_addr = APP_ADDR,
+        .status = UPGRADE_STATUS_FORCE_BOOT,
+        .timestamp = SystemTime_Millis(),
+    };
+
+    UpgradeFlag_Write(&flag);
+    UpgradeFlag_WriteExt(&flag);
+
+    NVIC_SystemReset();
+}
+
 static uint32_t CRC32_Update(uint32_t crc, uint8_t *data, uint32_t len) {
     for (uint32_t i = 0; i < len; i++) {
         crc ^= data[i];

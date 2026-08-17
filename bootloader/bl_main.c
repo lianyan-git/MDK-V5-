@@ -142,6 +142,13 @@ void BootloaderV2_Run(void)
     UpgradeFlag_t flag;
     int have_flag = (UpgradeFlag_Read(&flag) == 0);
 
+    /* 强制进入升级模式：App 内上电长按编码器已写 FORCE_BOOT 标志，
+     * 复位后直接开 AP 收固件（覆盖所有其它判定）。 */
+    if (have_flag && flag.status == UPGRADE_STATUS_FORCE_BOOT) {
+        UpgradeFlag_Clear();
+        BootloaderV2_EnterUpgradeMode();
+    }
+
     /* 阶段2：检测到 DOWNLOADED → 拷贝模式（刷写 APP，显示进度），不碰 ESP。
      * 下载阶段完成时已写 flag（含 firmware_size/crc），重启后直接刷写。 */
     if (have_flag && flag.status == UPGRADE_STATUS_DOWNLOADED) {
