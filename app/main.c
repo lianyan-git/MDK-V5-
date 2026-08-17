@@ -45,15 +45,8 @@ static void trigger_safety(SafetyState_t state);
 #ifndef BOOTLOADER_BUILD
 int main(void)
 {
-    HttpTransport_t transport;
-    HttpOtaHandlers_t handlers;
-    uint32_t sensor_tick = 0;
-    uint32_t ui_tick = 0;
-    uint32_t api_refresh_at = 0;
-    uint32_t rgb_tick = 0;
-    uint32_t control_tick = 0;
-    uint32_t motor_tick = 0;
-    uint32_t now;
+    /* ── 最小屏幕验证版：仅初始化时钟 + 屏幕，显示主界面。
+     * 其余功能（传感器/WiFi/长按进bootloader等）全部注释，先确认屏幕能亮。 ── */
 
     g_sys.params.target_temp = TEMP_DEFAULT;
     g_sys.params.dry_time_sec = TIME_DEFAULT_SEC;
@@ -95,103 +88,16 @@ int main(void)
 
     Board_Init();
     Watchdog_Init();   /* App 自启看门狗，不依赖 Bootloader */
-    SystemTime_Init(); /* 启动 SysTick，供 SystemTime_Millis/Encoder 长按计时使用 */
+    SystemTime_Init(); /* 启动 SysTick，供 SystemTime_Millis 使用 */
 
-    /* 上电长按编码器按钮(约1s) → 强制进入 Bootloader 下载模式（开 AP 收固件）。
-     * 必须在任何阻塞外设初始化之前检测，避免传感器 init 卡住导致无法进入升级。 */
-    {
-        Encoder_Init();
-        int force_boot = 0;
-        uint32_t t0 = SystemTime_Millis();
-        while ((int32_t)(SystemTime_Millis() - t0) < 3000) {
-            Watchdog_Kick();
-            Encoder_Process();
-            if (Encoder_GetEvent() == ENC_EVT_LONG_PRESS) {
-                force_boot = 1;
-                break;
-            }
-        }
-        if (force_boot) {
-            OTA_EnterBootloader();   /* 写 FORCE_BOOT 标志并复位，不会返回 */
-        }
-    }
-
-    /* 初始化屏幕并立即点亮：Bootloader 跳转后 RCC_DeInit 已重置所有外设，
-     * 必须最先初始化 SPI1 + ST7789 + 背光，否则 TFT_FillScreen 等绘图无效 → 黑屏。
-     * 放在传感器初始化之前，避免某个外设 init 卡住/看门狗复位导致永远到不了。 */
+    /* 初始化屏幕并显示主界面 */
     TFT_Init();
     UI_ShowBootScreen();
-
-    AHT20_Init();
-    CS1237_Init();
-    RGB_Strip_Init();
-    Encoder_Init();
-    Buzzer_Init();
-    PTC_Init();
-    Fan_Init();
-    Stepper_Init();
-
-    W25Q128_SetServiceCallback(Watchdog_Kick);
-    if (W25Q128_Init() != W25Q128_OK) {
-        /* 外部 Flash 初始化失败：保持默认参数 */
-    } else {
-        System_LoadParams();
-    }
-
-    OtaUpdate_Init();
-    EspHttpBridge_Init();
-    EspHttpBridge_GetTransport(&transport);
-    HttpServer_Init(&transport);
-    OtaHttp_GetHandlers(&handlers);
-    HttpServer_SetOtaHandlers(&handlers);
-    refresh_api_data();
-    EspAt_Init();
-
     UI_DrawMainScreen();
 
     for (;;) {
-        now = SystemTime_Millis();
         Watchdog_Kick();
-        EspAt_Poll();
-        if (EspAt_GetState() == ESP_AT_STATE_READY) EspHttpBridge_Poll();
-
-        if ((int32_t)(now - sensor_tick) >= (int32_t)500) {
-            sensor_tick = now;
-            read_sensors();
-            safety_check();
-        }
-        Encoder_Process();
-        if ((int32_t)(now - control_tick) >= (int32_t)200) {
-            control_tick = now;
-            control_update();
-        }
-        if ((int32_t)(now - motor_tick) >= (int32_t)10) {
-            motor_tick = now;
-            Stepper_Update();
-        }
-        if ((int32_t)(now - ui_tick) >= (int32_t)50) {
-            ui_tick = now;
-            UI_Update();
-        }
-        if ((int32_t)(now - rgb_tick) >= (int32_t)50) {
-            rgb_tick = now;
-            update_rgb();
-        }
-        if ((int32_t)(now - api_refresh_at) >= 0) {
-            refresh_api_data();
-            api_refresh_at = now + 250U;
-        }
-        if (g_sys.pid_autotune_running) {
-            PTC_PID_AutotuneProcess();
-            g_sys.pid_autotune_progress = PTC_PID_AutotuneGetProgress();
-            if (PTC_PID_AutotuneIsDone()) { g_sys.pid_autotune_running = 0; g_sys.pid_autotune_progress = 100; }
-        }
-        if (g_sys.temp_pid_running) {
-            PTC_TempPID_AutotuneProcess();
-            g_sys.temp_pid_progress = PTC_TempPID_AutotuneGetProgress();
-            if (PTC_TempPID_AutotuneIsDone()) { g_sys.temp_pid_running = 0; g_sys.temp_pid_progress = 100; }
-        }
-        OtaUpdate_Poll();
+        /* 只喂狗，其余全部注释 */
     }
 }
 #endif /* BOOTLOADER_BUILD */
