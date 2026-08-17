@@ -219,3 +219,19 @@ A: 确认背光引脚（PB0）配置为推挽输出并置高。若硬件上背�
 - `eide.yml` App 分区修正为 `0x08005000`/`0xB000`（原 `0x08004800`/`0xB800` 错误，会覆盖升级标志区）
 - `scripts/configure_keil_targets.py` Bootloader 入口改 `bl_main.c`，分区地址与 `platform_contract.h` 一致
 - Keil 工程（`Project.uvprojx`、`Project.uvoptx`）已同步至新分区配置
+
+### 2026-08-18
+
+#### 新增
+- **主界面浅色主题**：浅灰背景 + 白卡片 + 灰描边 + 各卡片淡彩底色（温度暖橙 / 湿度冷青 / 重量紫 / PTC 红 / 时间浅绿），替代原深色蓝黑主题
+- **圆角描边**：新增 `draw_frame_rounded()`，四角圆弧像素落在 `[r-SEL_FRAME_W, r]` 圆环带内，卡片与菜单选中项圆角均带完整灰色外轮廓
+- **数值+单位统一绘制**：抽取 `draw_value_unit()` 公共函数，单位（℃/g）与数字同字号 size2、紧跟数值后，全屏与局部刷新共用，消除单位字号/位置不一致
+- **时间栏增强**：烘干时间栏增加运行状态文字（IDLE/HEAT/DRY/COOL/DONE）与 REM 剩余时间显示
+- **SPI1 TX DMA 局部刷新**：新增 `Spi1Bus_TransferDma()`（DMA1_Channel3），`TFT_FillRect` 大矩形（≥32 像素）走 DMA、小矩形（字符笔画等）走轮询，降低 SPI 刷新 CPU 占用
+- **字体扩展**：`bsp_tft_st7789.c` 新增 `&` 与撇号 `'` 字形
+
+#### 修复
+- 开屏 "QiMingXing" X 方向居中（10 字符 × 18px = 180px，原误用 198px）；"LianYan & -e-" 居中（156px，原 168px）
+- ℃ 单位圆圈位置修正：° 小圆圈（scale=1）置于 C 左上角，与 C 分离不重叠；C/g 颜色与数字同步（原灰色 `UI_TEXT_DIM`）
+- **旋转编码器文字闪烁**：`UI_UpdateMainDynamic()` 原每 50ms 无条件用固定 `CARD_BG_*` 底色重绘值文字、未考虑选中态底色（`UI_CARD_HI`），导致选中卡文字反复擦写闪烁；改为值文字底色随 `selected_item` 动态选择，并加 `last_val[4]` 缓存（值不变不重绘）+ `last_sel` 检测（切换选中项时统一刷底色）
+- `draw_card_pulse` 末行缩进错乱修复
