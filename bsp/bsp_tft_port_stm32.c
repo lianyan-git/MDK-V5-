@@ -21,7 +21,8 @@ void TftPort_Init(void)
 
     GPIO_ResetBits(PIN_TFT_DC_PORT, PIN_TFT_DC_PIN);
     GPIO_SetBits(PIN_TFT_RES_PORT, PIN_TFT_RES_PIN);
-    GPIO_ResetBits(PIN_TFT_BL_PORT, PIN_TFT_BL_PIN);
+    /* 背光默认点亮（高=亮）。板子上背光 MOS 已拆除，PB0 直接驱动背光。 */
+    GPIO_SetBits(PIN_TFT_BL_PORT, PIN_TFT_BL_PIN);
 }
 
 void TftPort_SetDataMode(int data_mode)

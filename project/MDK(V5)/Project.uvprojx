@@ -1253,6 +1253,11 @@
               <FileType>1</FileType>
               <FilePath>..\..\app\ui_manager.c</FilePath>
             </File>
+            <File>
+              <FileName>ui_comp.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\..\app\ui_comp.c</FilePath>
+            </File>
           </Files>
         </Group>
       </Groups>

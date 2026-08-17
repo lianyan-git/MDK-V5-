@@ -302,6 +302,10 @@ void BL_TFT_DrawCentered(uint16_t y, const char *str, uint16_t color, uint8_t si
 }
 
 void BL_TFT_ShowUpgradeScreen(void) {
+    static uint8_t drawn = 0;
+    if (drawn) return;   /* 已绘制过：不整屏重画，避免刷新闪烁 */
+    drawn = 1;
+
     BL_TFT_Clear(COLOR_BLACK);
 
     /* 横屏 240x135 布局 */

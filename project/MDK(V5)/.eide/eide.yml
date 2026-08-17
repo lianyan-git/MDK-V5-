@@ -31,6 +31,8 @@ virtualFolder:
     - name: Module
       files:
         - path: ../../app/ui_manager.c
+        - path: ../../app/ui_comp.c
+        - path: ../../app/ui_comp.h
         - path: ../../app/system_config.c
         - path: ../../module/system_time.c
         - path: ../../module/stm32f10x_it.c
@@ -331,6 +333,7 @@ targets:
       libList: []
     excludeList:
       - ../../app/ui_manager.c
+      - ../../app/ui_comp.c
       - ../../app/system_config.c
       - ../../bsp/bsp_encoder.c
       - ../../bsp/bsp_fan.c

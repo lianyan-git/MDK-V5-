@@ -7,8 +7,10 @@
 #include <string.h>
 
 #define TFT_SPI_TIMEOUT_MS 20U
-#define TFT_X_OFFSET       52U
-#define TFT_Y_OFFSET       40U
+/* ST7789 1.14寸 135x240（GRAM 240x320）旋转 90°：X=40 / Y=52
+ * 与 bootloader bl_tft.c 完全一致 */
+#define TFT_X_OFFSET       40U
+#define TFT_Y_OFFSET       52U
 #define TFT_PIXEL_CHUNK    32U
 
 static const uint8_t font_digits[10][5] = {
@@ -160,7 +162,7 @@ int TFT_ClipRect(uint16_t *x, uint16_t *y, uint16_t *width, uint16_t *height)
 
 TftStatus_t TFT_Init(void)
 {
-    static const uint8_t madctl[] = {0x00U};
+    static const uint8_t madctl[] = {0xA0U};   /* 与 bootloader 一致：MX|MV，旋转90°+180° */
     static const uint8_t color_mode[] = {0x05U};
     static const uint8_t porch[] = {0x0CU, 0x0CU, 0x00U, 0x33U, 0x33U};
     static const uint8_t gate_control[] = {0x35U};
@@ -204,31 +206,45 @@ TftStatus_t TFT_Init(void)
     TftStatus_t result;
 
     TftPort_Init();
-    if (Spi1Bus_Init() != SPI1_BUS_OK) return TFT_ERROR_BUS;
-    TftPort_SetBacklight(0);
+    TftPort_SetBacklight(1);   /* 立即点亮背光，后续任何失败都不再关 */
+    if (Spi1Bus_Init() != SPI1_BUS_OK) {
+        return TFT_ERROR_BUS;
+    }
     TftPort_SetReset(0);
     TftPort_DelayMs(20U);
     TftPort_SetReset(1);
     TftPort_DelayMs(120U);
 
     result = begin_transaction();
-    if (result != TFT_OK) return result;
+    if (result != TFT_OK) {
+        TftPort_SetBacklight(1);   /* 中途失败也开背光 */
+        return result;
+    }
     result = write_command(0x11U, NULL, 0U);
     end_transaction();
-    if (result != TFT_OK) return result;
+    if (result != TFT_OK) {
+        TftPort_SetBacklight(1);
+        return result;
+    }
     TftPort_DelayMs(120U);
 
     result = begin_transaction();
-    if (result != TFT_OK) return result;
+    if (result != TFT_OK) {
+        TftPort_SetBacklight(1);
+        return result;
+    }
     for (index = 0U; index < (sizeof(sequence) / sizeof(sequence[0])); ++index) {
         result = write_command(sequence[index].command,
                                sequence[index].data, sequence[index].length);
         if (result != TFT_OK) break;
     }
     end_transaction();
-    if (result != TFT_OK) return result;
+    if (result != TFT_OK) {
+        TftPort_SetBacklight(1);
+        return result;
+    }
     result = TFT_FillScreen(TFT_COLOR_BLACK);
-    if (result == TFT_OK) TftPort_SetBacklight(1);
+    TftPort_SetBacklight(1);   /* 无条件开背光，与 bootloader BL_TFT_Init 一致 */
     return result;
 }
 

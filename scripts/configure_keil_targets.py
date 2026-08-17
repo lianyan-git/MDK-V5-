@@ -61,6 +61,7 @@ TARGETS = {
         "sources": (
             ("App", "system_config.c", 1, r"..\..\app\system_config.c"),
             ("App", "ui_manager.c", 1, r"..\..\app\ui_manager.c"),
+            ("App", "ui_comp.c", 1, r"..\..\app\ui_comp.c"),
             ("BSP", "bsp_esp_uart_stm32.c", 1, r"..\..\bsp\bsp_esp_uart_stm32.c"),
             ("BSP", "bsp_aht20.c", 1, r"..\..\bsp\bsp_aht20.c"),
             ("BSP", "bsp_buzzer.c", 1, r"..\..\bsp\bsp_buzzer.c"),

@@ -1,6 +1,8 @@
 #ifndef __UI_MANAGER_H
 #define __UI_MANAGER_H
 
+#include <stdint.h>
+
 void UI_ShowBootScreen(void);
 void UI_Update(void);
 void UI_DrawMainScreen(void);
@@ -22,5 +24,7 @@ void UI_DrawWiFiScreen(void);
 void UI_DrawOTAScreen(void);
 void UI_DrawSafetyAlert(void);
 void UI_UpdateMainDynamic(void);
+void UI_RefreshCard(uint8_t item);
+void UI_ResetOTAScreen(void);
 
 #endif

@@ -1,4 +1,4 @@
-#include "bsp_encoder.h"
+﻿#include "bsp_encoder.h"
 #include "bsp_buzzer.h"
 #include "bsp_cs1237.h"
 #include "bsp_ptc.h"
@@ -52,8 +52,10 @@ EncoderEvent_t Encoder_GetEvent(void)
                  | GPIO_ReadInputDataBit(PIN_ENC_B_PORT, PIN_ENC_B_PIN));
     enc_accum += table[(enc_last_ab << 2) | ab];
     enc_last_ab = ab;
-    if (enc_accum >= 4) { enc_accum = 0; return ENC_EVT_CW; }
-    if (enc_accum <= -4) { enc_accum = 0; return ENC_EVT_CCW; }
+    /* EC11 涓€鏍?= 4 涓浉浣嶇姸鎬併€備负璁?杞竴鏍煎氨鍝嶅簲涓€娆?鏇寸伒鏁忥紝
+     * 绱 卤2 鍗宠Е鍙戯紙绾﹀崐鏍硷級锛屽揩閫熸棆杞篃涓嶆紡銆?*/
+    if (enc_accum >= 2) { enc_accum = 0; return ENC_EVT_CW; }
+    if (enc_accum <= -2) { enc_accum = 0; return ENC_EVT_CCW; }
     if (!btn_down && GPIO_ReadInputDataBit(PIN_ENC_BTN_PORT, PIN_ENC_BTN_PIN) == 0) {
         btn_down = 1; btn_down_time = SystemTime_Millis();
     }
@@ -74,31 +76,31 @@ static void motor_edit_set(int param_index, int up)
 {
     Params_t *p = &g_sys.params;
     switch (param_index) {
-    case 0: /* 烘干联动 */
+    case 0: /* 鐑樺共鑱斿姩 */
         p->motor_enabled = up ? 1 : 0;
         break;
-    case 1: /* 转动方向 */
+    case 1: /* 杞姩鏂瑰悜 */
         p->motor_direction = up ? 1 : 0;
         break;
-    case 2: /* 转动速度 1-50 */
+    case 2: /* 杞姩閫熷害 1-50 */
         if (up) { if (p->motor_speed < 50) p->motor_speed++; }
         else    { if (p->motor_speed > 1) p->motor_speed--; }
         break;
-    case 3: /* 边烘边打 */
+    case 3: /* 杈圭儤杈规墦 */
         p->motor_oscillate = up ? 1 : 0;
         break;
-    case 4: /* 摆动角度 1-30 (封顶30) */
+    case 4: /* 鎽嗗姩瑙掑害 1-30 (灏侀《30) */
         if (up) { if (p->motor_oscillate_angle < 30) p->motor_oscillate_angle++; }
         else    { if (p->motor_oscillate_angle > 1) p->motor_oscillate_angle--; }
         break;
-    case 5: /* 驱动选择 */
+    case 5: /* 椹卞姩閫夋嫨 */
         p->motor_driver = up ? MOTOR_DRIVER_TMC2209 : MOTOR_DRIVER_A4988;
         break;
-    case 6: /* 驱动电流 0.2-0.6 步进0.1 */
+    case 6: /* 椹卞姩鐢垫祦 0.2-0.6 姝ヨ繘0.1 */
         if (up) { if (p->motor_current < 6) p->motor_current++; }
         else    { if (p->motor_current > 2) p->motor_current--; }
         break;
-    case 7: /* 静音 */
+    case 7: /* 闈欓煶 */
         p->motor_stealthchop = up ? 1 : 0;
         break;
     default: break;
@@ -114,16 +116,16 @@ void Encoder_Process(void)
     switch (g_sys.current_screen) {
 
     case SCREEN_MAIN:
-        if (evt == ENC_EVT_CW) g_sys.selected_item = (g_sys.selected_item + 1) % 4;
-        else if (evt == ENC_EVT_CCW) g_sys.selected_item = (g_sys.selected_item == 0) ? 3 : g_sys.selected_item - 1;
+        if (evt == ENC_EVT_CW) g_sys.selected_item = (g_sys.selected_item + 1) % 5;
+        else if (evt == ENC_EVT_CCW) g_sys.selected_item = (g_sys.selected_item == 0) ? 4 : g_sys.selected_item - 1;
         else if (evt == ENC_EVT_CLICK) {
             if (g_sys.selected_item == 0) g_sys.current_screen = SCREEN_TEMP_ADJUST;
             else if (g_sys.selected_item == 1) { g_sys.selected_item = 0; g_sys.current_screen = SCREEN_WEIGHT; }
-            else if (g_sys.selected_item == 2) g_sys.current_screen = SCREEN_TIME_ADJUST;
+            else if (g_sys.selected_item == 2) { g_sys.selected_item = 0; g_sys.current_screen = SCREEN_WEIGHT; }
             else if (g_sys.selected_item == 3) g_sys.current_screen = SCREEN_PTC_ADJUST;
+            else if (g_sys.selected_item == 4) g_sys.current_screen = SCREEN_TIME_ADJUST;
         }
-        else if (evt == ENC_EVT_LONG_PRESS) g_sys.current_screen = SCREEN_MENU;
-        break;
+break;
 
     case SCREEN_WEIGHT:
         if (evt == ENC_EVT_CW) g_sys.selected_item = (g_sys.selected_item + 1) % 2;

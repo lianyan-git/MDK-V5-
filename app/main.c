@@ -27,6 +27,7 @@
 #include "ota_upload.h"
 #include "mod_ota.h"
 #include "ui_manager.h"
+#include "pin_config.h"
 #include <string.h>
 #include <stdio.h>
 #endif
@@ -45,9 +46,21 @@ static void trigger_safety(SafetyState_t state);
 #ifndef BOOTLOADER_BUILD
 int main(void)
 {
-    /* ── 最小屏幕验证版：仅初始化时钟 + 屏幕，显示主界面。
-     * 其余功能（传感器/WiFi/长按进bootloader等）全部注释，先确认屏幕能亮。 ── */
+    uint32_t ui_tick = 0;
+    uint32_t now;
 
+    /* ── 先点亮背光(PB0 推挽高)：已验证有效，防止任何后续卡死时屏幕全黑 ── */
+    {
+        GPIO_InitTypeDef g;
+        RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
+        g.GPIO_Pin = PIN_TFT_BL_PIN;
+        g.GPIO_Mode = GPIO_Mode_Out_PP;
+        g.GPIO_Speed = GPIO_Speed_50MHz;
+        GPIO_Init(PIN_TFT_BL_PORT, &g);
+        GPIO_SetBits(PIN_TFT_BL_PORT, PIN_TFT_BL_PIN);
+    }
+
+    /* g_sys 初始化（UI 需要） */
     g_sys.params.target_temp = TEMP_DEFAULT;
     g_sys.params.dry_time_sec = TIME_DEFAULT_SEC;
     g_sys.params.ptc_max_temp = PTC_TEMP_DEFAULT;
@@ -86,18 +99,82 @@ int main(void)
     g_sys.drying_active = 0;
     g_sys.chamber_temp_last = 25.0f;
 
-    Board_Init();
+    /* 不用 Board_Init（含 NTC_Init 的 ADC 校准 while，未接传感器可能卡死）。
+     * 只做安全引脚初始化（加热器关断 + SWJ 重映射）。 */
+    Board_EarlyInit();
     Watchdog_Init();   /* App 自启看门狗，不依赖 Bootloader */
-    SystemTime_Init(); /* 启动 SysTick，供 SystemTime_Millis 使用 */
 
-    /* 初始化屏幕并显示主界面 */
+    /* 关键：从 RCC 读回实际时钟，纠正 SystemCoreClock（与 bootloader 一致）。
+     * 否则 SysTick 周期错，SystemTime_Millis 不走，长按检测循环死等。 */
+    SystemCoreClockUpdate();
+    SystemTime_Init(); /* 启动 SysTick，供 SystemTime_Millis/Encoder 计时 */
+
+    /* 上电长按编码器(约1s) → 强制进入 Bootloader 下载模式。
+     * 带独立计数保护：即使 SystemTime 异常也能退出，不阻塞屏幕初始化。 */
+    {
+        Encoder_Init();
+        int force_boot = 0;
+        uint32_t t0 = SystemTime_Millis();
+        uint32_t guard = 0;
+        while ((int32_t)(SystemTime_Millis() - t0) < 3000 && guard < 300000U) {
+            guard++;
+            Watchdog_Kick();
+            Encoder_Process();
+            if (Encoder_GetEvent() == ENC_EVT_LONG_PRESS) {
+                force_boot = 1;
+                break;
+            }
+        }
+        if (force_boot) {
+            OTA_EnterBootloader();   /* 写 FORCE_BOOT 标志并复位，不会返回 */
+        }
+    }
+
+    /* 屏幕初始化 + 主界面 */
     TFT_Init();
     UI_ShowBootScreen();
     UI_DrawMainScreen();
 
-    for (;;) {
-        Watchdog_Kick();
-        /* 只喂狗，其余全部注释 */
+    /* 编码器：Encoder_Process 内部处理旋转/单击，长按进菜单由下方独立检测。
+     * 旋转后整屏重绘主界面（无白框残影，选中框随卡片高亮）。 */
+    {
+        uint32_t btn_press_ms = 0;
+        uint8_t  btn_was_down = 0;
+        uint8_t  btn_long_done = 0;
+        uint8_t  last_sel = 0xFF;
+        for (;;) {
+            now = SystemTime_Millis();
+            Watchdog_Kick();
+
+            {
+                uint8_t old_sel = last_sel;
+                Encoder_Process();   /* 旋转/单击由内部状态机处理 */
+                if (g_sys.current_screen == SCREEN_MAIN && last_sel != 0xFF
+                    && g_sys.selected_item != last_sel) {
+                    /* SGL 脏矩形局部刷新：只重绘旧/新两张卡片，不整屏重绘 */
+                    UI_RefreshCard(old_sel);
+                    UI_RefreshCard(g_sys.selected_item);
+                }
+                last_sel = g_sys.selected_item;
+            }
+
+            /* 独立长按检测：按钮按下持续 1s → 进菜单（与 bootloader 长按区分：这里不写标志） */
+            if (GPIO_ReadInputDataBit(PIN_ENC_BTN_PORT, PIN_ENC_BTN_PIN) == 0) {
+                if (!btn_was_down) { btn_press_ms = now; btn_was_down = 1; btn_long_done = 0; }
+                else if (!btn_long_done && (int32_t)(now - btn_press_ms) >= 1000) {
+                    btn_long_done = 1;
+                    if (g_sys.current_screen == SCREEN_MAIN) g_sys.current_screen = SCREEN_MENU;
+                    else g_sys.current_screen = SCREEN_MAIN;
+                }
+            } else {
+                btn_was_down = 0;
+            }
+
+            if ((int32_t)(now - ui_tick) >= (int32_t)50) {
+                ui_tick = now;
+                UI_Update();
+            }
+        }
     }
 }
 #endif /* BOOTLOADER_BUILD */

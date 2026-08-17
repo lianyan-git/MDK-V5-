@@ -1,9 +1,10 @@
-#ifndef BOOTLOADER_BUILD
+﻿#ifndef BOOTLOADER_BUILD
 #include "ui_manager.h"
 #include "system_config.h"
 #include "bsp_tft_st7789.h"
 #include "stm32f10x.h"
 #include <stdio.h>
+#include <string.h>
 
 #define CARD_H         30
 #define CARD_GAP       4
@@ -12,6 +13,23 @@
 #define BTN_Y          218
 #define BTN_H          18
 #define BTN_GAP        4
+
+/* ── sgl 风格主题色（深色蓝黑） ── */
+#define UI_BG           TFT_COLOR(0x0E, 0x12, 0x1A)   /* 深蓝黑背景 */
+#define UI_CARD         TFT_COLOR(0x1A, 0x22, 0x2E)   /* 卡片面 */
+#define UI_CARD_HI      TFT_COLOR(0x26, 0x30, 0x40)   /* 卡片高亮/悬停 */
+#define UI_CARD_EDGE    TFT_COLOR(0x33, 0x40, 0x52)   /* 卡片描边 */
+#define UI_TEXT         TFT_COLOR(0xEC, 0xEF, 0xF3)   /* 主文字 */
+#define UI_TEXT_DIM     TFT_COLOR(0x9A, 0xA5, 0xB5)   /* 次要文字 */
+#define UI_TITLE_BG     TFT_COLOR(0x0A, 0x0E, 0x14)   /* 标题栏底 */
+#define UI_ACCENT       TFT_COLOR(0x2E, 0xA6, 0xFF)   /* 亮蓝 */
+#define UI_ACCENT2      TFT_COLOR(0xFF, 0x5C, 0x6E)   /* 珊瑚红 */
+#define UI_OK           TFT_COLOR(0x3E, 0xD8, 0x6E)   /* 亮绿 */
+#define UI_WARN         TFT_COLOR(0xFF, 0xC1, 0x2E)   /* 琥珀黄 */
+#define UI_CYAN         TFT_COLOR(0x29, 0xE0, 0xD8)   /* 青 */
+#define UI_PURPLE       TFT_COLOR(0xB0, 0x7B, 0xF0)   /* 紫 */
+
+#define TFT_COLOR(r,g,b)  ((uint16_t)((((r)&0xF8)<<8)|(((g)&0xFC)<<3)|((b)>>3)))
 
 static void draw_frame(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
 static void Delay_ms(uint16_t ms);
@@ -24,83 +42,148 @@ static void draw_frame(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t 
     TFT_FillRect(x + w - SEL_FRAME_W, y, SEL_FRAME_W, h, color);
 }
 
+/* 真圆角矩形：四角用圆弧像素，中间用 FillRect 高效填充 */
+static void fill_round_rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+                            uint16_t color, uint8_t radius)
+{
+    int16_t dx, dy;
+    if (radius == 0U) { TFT_FillRect(x, y, w, h, color); return; }
+    /* 中间主体 */
+    TFT_FillRect(x + radius, y, w - 2U * radius, h, color);
+    TFT_FillRect(x, y + radius, radius, h - 2U * radius, color);
+    TFT_FillRect(x + w - radius, y + radius, radius, h - 2U * radius, color);
+    /* 四角圆弧：逐行画小矩形近似圆 */
+    for (dy = 0; dy < radius; dy++) {
+        uint8_t r2 = (uint8_t)(radius - 1);
+        int16_t d = (int16_t)(r2 - dy);
+        uint16_t seg = 0;
+        for (dx = 0; dx < radius; dx++) {
+            int16_t ddx = (int16_t)(r2 - dx);
+            if (ddx * ddx + d * d <= (int16_t)(r2 * r2)) {
+                seg = (uint16_t)(dx + 1);
+            }
+        }
+        if (seg > 0) {
+            TFT_FillRect(x, y + dy, seg, 1, color);
+            TFT_FillRect(x + w - seg, y + dy, seg, 1, color);
+            TFT_FillRect(x, y + h - 1 - dy, seg, 1, color);
+            TFT_FillRect(x + w - seg, y + h - 1 - dy, seg, 1, color);
+        }
+    }
+}
+
+/* ── 颜色插值工具（RGB565） ── */
+static uint16_t lerp_color(uint16_t c1, uint16_t c2, uint8_t t)
+{
+    if (t >= 255U) return c2;
+    if (t == 0U) return c1;
+    uint8_t r1 = (uint8_t)((c1 >> 11) & 0x1F), g1 = (uint8_t)((c1 >> 5) & 0x3F), b1 = (uint8_t)(c1 & 0x1F);
+    uint8_t r2 = (uint8_t)((c2 >> 11) & 0x1F), g2 = (uint8_t)((c2 >> 5) & 0x3F), b2 = (uint8_t)(c2 & 0x1F);
+    uint8_t r = (uint8_t)(r1 + ((uint16_t)(r2 - r1) * t / 255U));
+    uint8_t g = (uint8_t)(g1 + ((uint16_t)(g2 - g1) * t / 255U));
+    uint8_t b = (uint8_t)(b1 + ((uint16_t)(b2 - b1) * t / 255U));
+    return (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+/* 各卡片主题色（背景色区分卡片类型） */
+#define CARD_BG_TEMP    TFT_COLOR(0x1E, 0x18, 0x10)   /* 暖橙底 */
+#define CARD_BG_HUMI    TFT_COLOR(0x10, 0x1A, 0x1E)   /* 冷青底 */
+#define CARD_BG_WEIGHT  TFT_COLOR(0x18, 0x12, 0x22)   /* 紫底 */
+#define CARD_BG_PTC     TFT_COLOR(0x20, 0x12, 0x14)   /* 红底 */
+#define CARD_BG_TIME    TFT_COLOR(0x10, 0x14, 0x20)   /* 蓝底 */
+
+/* 选中卡顶部色条：随时间在 ACCENT 与高亮之间呼吸（平滑动画） */
+static uint16_t pulse_color(void)
+{
+    uint32_t t = SystemTime_Millis() % 1600U;   /* 1.6s 周期 */
+    uint8_t phase;
+    if (t < 800U) phase = (uint8_t)(t * 255U / 800U);
+    else phase = (uint8_t)((1600U - t) * 255U / 800U);
+    return lerp_color(UI_ACCENT, UI_TEXT, phase);
+}
+
+/* 在卡片顶部画高亮呼吸色条（仅选中卡，小区域局部刷新不闪烁） */
+static void draw_card_pulse(uint16_t x, uint16_t y, uint16_t w, uint8_t selected)
+{
+    if (!selected) return;
+    TFT_FillRect(x, y, w, 2, pulse_color());
+}
+
 static void draw_btn(uint16_t y, const char *label, uint16_t color, uint8_t selected)
 {
-    TFT_FillRect(5, y, 125, BTN_H, COLOR_DARKGRAY);
+    TFT_FillRect(5, y, 125, BTN_H, UI_CARD);
     TFT_DrawString(10, y + 3, label, color, COLOR_DARKGRAY, 1);
     if (selected) draw_frame(5, y, 125, BTN_H, COLOR_WHITE);
 }
 
+/* 温度计图标（粗壮，约 10x20） */
 static void draw_icon_temp(uint16_t x, uint16_t y)
 {
-    TFT_FillRect(x + 2, y, 2, 16, COLOR_ORANGE);
-    TFT_FillRect(x, y + 16, 6, 4, COLOR_ORANGE);
+    uint16_t c = UI_WARN;
+    /* 玻璃球 */
+    TFT_FillRect(x + 3, y + 10, 5, 7, c);
+    TFT_FillRect(x + 2, y + 11, 7, 5, c);
+    TFT_FillRect(x + 3, y + 12, 5, 3, c);
+    /* 细管 */
+    TFT_FillRect(x + 5, y + 2, 1, 9, c);
+    TFT_FillRect(x + 6, y, 1, 12, c);
+    /* 管帽 */
+    TFT_FillRect(x + 5, y, 2, 2, c);
 }
 
+/* 重量图标（粗壮哑铃，约 10x12） */
 static void draw_icon_weight(uint16_t x, uint16_t y)
 {
-    TFT_FillRect(x + 1, y, 5, 2, COLOR_MAGENTA);
-    TFT_FillRect(x + 3, y + 2, 1, 9, COLOR_MAGENTA);
-    TFT_FillRect(x, y + 11, 7, 3, COLOR_MAGENTA);
-    TFT_FillRect(x + 1, y + 8, 1, 3, COLOR_MAGENTA);
-    TFT_FillRect(x + 5, y + 8, 1, 3, COLOR_MAGENTA);
+    uint16_t c = UI_PURPLE;
+    /* 两端配重 */
+    TFT_FillRect(x, y + 3, 3, 8, c);
+    TFT_FillRect(x + 8, y + 3, 3, 8, c);
+    TFT_FillRect(x + 1, y + 2, 1, 10, c);
+    TFT_FillRect(x + 9, y + 2, 1, 10, c);
+    /* 中杆 */
+    TFT_FillRect(x + 3, y + 5, 5, 3, c);
 }
 
+/* 湿度水滴图标（粗壮，约 10x14） */
+static void draw_icon_humi(uint16_t x, uint16_t y)
+{
+    uint16_t c = UI_CYAN;
+    /* 水滴主体 */
+    TFT_FillRect(x + 3, y, 4, 3, c);
+    TFT_FillRect(x + 2, y + 3, 6, 3, c);
+    TFT_FillRect(x + 1, y + 6, 8, 4, c);
+    TFT_FillRect(x + 2, y + 10, 6, 3, c);
+    TFT_FillRect(x + 3, y + 13, 4, 1, c);
+}
+
+/* 圆形时钟图标（饱满，约 12x12） */
 static void draw_icon_clock(uint16_t x, uint16_t y)
 {
-    TFT_FillRect(x + 1, y, 5, 1, COLOR_CYAN);
-    TFT_FillRect(x, y + 1, 7, 1, COLOR_CYAN);
-    TFT_FillRect(x, y + 2, 1, 12, COLOR_CYAN);
-    TFT_FillRect(x + 6, y + 2, 1, 12, COLOR_CYAN);
-    TFT_FillRect(x + 1, y + 14, 5, 1, COLOR_CYAN);
-    TFT_FillRect(x + 2, y + 15, 3, 1, COLOR_CYAN);
-    TFT_FillRect(x + 3, y + 5, 1, 5, COLOR_CYAN);
-    TFT_FillRect(x + 4, y + 8, 2, 1, COLOR_CYAN);
+    /* 圆盘外圈 */
+    TFT_FillRect(x + 3, y + 1, 6, 1, UI_CYAN);
+    TFT_FillRect(x + 2, y + 2, 8, 1, UI_CYAN);
+    TFT_FillRect(x + 1, y + 3, 10, 7, UI_CYAN);
+    TFT_FillRect(x + 2, y + 10, 8, 1, UI_CYAN);
+    TFT_FillRect(x + 3, y + 11, 6, 1, UI_CYAN);
+    /* 表盘内芯（挖空） */
+    TFT_FillRect(x + 3, y + 4, 6, 5, UI_CARD);
+    /* 指针 */
+    TFT_FillRect(x + 5, y + 3, 2, 5, UI_CYAN);   /* 时针（向上） */
+    TFT_FillRect(x + 5, y + 6, 4, 2, UI_CYAN);   /* 分针（向右） */
+    TFT_FillRect(x + 5, y + 5, 1, 1, UI_CYAN);   /* 轴心 */
 }
 
+/* PTC 加热图标（粗壮，约 12x12） */
 static void draw_icon_ptc(uint16_t x, uint16_t y)
 {
-    TFT_FillRect(x + 2, y, 3, 6, COLOR_RED);
-    TFT_FillRect(x + 1, y + 6, 5, 4, COLOR_RED);
-    TFT_FillRect(x, y + 10, 7, 4, COLOR_RED);
-    TFT_FillRect(x + 1, y + 14, 5, 3, COLOR_RED);
-    TFT_FillRect(x + 2, y + 17, 3, 2, COLOR_RED);
-}
-
-static void draw_icon_menu(void)
-{
-    TFT_FillRect(10, 56, 20, 3, COLOR_WHITE);
-    TFT_FillRect(10, 63, 20, 3, COLOR_WHITE);
-    TFT_FillRect(10, 70, 20, 3, COLOR_WHITE);
-}
-
-static void draw_icon_info(void)
-{
-    TFT_FillRect(14, 56, 12, 12, COLOR_CYAN);
-    TFT_FillRect(12, 58, 16, 8, COLOR_CYAN);
-    TFT_FillRect(18, 61, 4, 4, COLOR_BLACK);
-    TFT_FillRect(19, 60, 2, 1, COLOR_CYAN);
-}
-
-static void draw_icon_gear(void)
-{
-    TFT_FillRect(15, 57, 6, 10, COLOR_YELLOW);
-    TFT_FillRect(12, 60, 12, 4, COLOR_YELLOW);
-    TFT_FillRect(17, 55, 2, 14, COLOR_YELLOW);
-}
-
-static void draw_icon_motor(void)
-{
-    TFT_FillRect(12, 58, 12, 3, COLOR_GREEN);
-    TFT_FillRect(10, 61, 16, 3, COLOR_GREEN);
-    TFT_FillRect(12, 64, 12, 3, COLOR_GREEN);
-    TFT_FillRect(17, 56, 2, 12, COLOR_WHITE);
-}
-
-static void draw_icon_start(void)
-{
-    TFT_FillRect(12, 56, 4, 12, COLOR_GREEN);
-    TFT_FillRect(16, 59, 8, 6, COLOR_GREEN);
+    uint16_t c = UI_ACCENT2;
+    /* 发热块 */
+    TFT_FillRect(x + 2, y + 2, 8, 8, c);
+    TFT_FillRect(x + 1, y + 3, 10, 6, c);
+    TFT_FillRect(x + 3, y + 4, 6, 4, c);
+    /* 散热鳍片 */
+    TFT_FillRect(x + 4, y + 10, 1, 3, c);
+    TFT_FillRect(x + 7, y + 10, 1, 3, c);
 }
 
 static void draw_degree(uint16_t x, uint16_t y, uint16_t color, uint8_t scale)
@@ -120,133 +203,271 @@ static void draw_card_bg(uint16_t y, uint16_t accent_color)
     TFT_FillRect(ACCENT_W, y, TFT_WIDTH - ACCENT_W, CARD_H, COLOR_BLACK);
 }
 
+/* 横屏卡片背景（可指定坐标/尺寸），sgl 风格：深色卡片 + 顶边高亮 */
+static void draw_card_bg_at(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t accent_color)
+{
+    TFT_FillRect(x, y, w, h, UI_CARD);
+    TFT_FillRect(x, y, w, 2, accent_color);        /* 顶部色条 */
+    TFT_FillRect(x, y + h - 2, w, 2, accent_color); /* 底部色条 */
+}
+
 void UI_ShowBootScreen(void)
 {
-    TFT_FillScreen(COLOR_BLACK);
-    TFT_DrawString(22, 90, "DRYER", COLOR_WHITE, COLOR_BLACK, 3);
-    TFT_DrawString(30, 130, "System Boot...", COLOR_GRAY, COLOR_BLACK, 1);
-    TFT_FillRect(15, 160, 105, 1, COLOR_WHITE);
-    TFT_FillRect(15, 169, 105, 1, COLOR_WHITE);
-    TFT_FillRect(15, 160, 1, 10, COLOR_WHITE);
-    TFT_FillRect(119, 160, 1, 10, COLOR_WHITE);
-    for (int i = 0; i < 103; i += 2) {
-        TFT_FillRect(16 + i, 161, 2, 8, COLOR_GREEN);
+    uint16_t x;
+    TFT_FillScreen(UI_BG);
+
+    /* "QiMingXing" size=3 → 每字符 18px，11字符=198px，水平居中，上移 */
+    x = (TFT_WIDTH - 198U) / 2U;
+    TFT_DrawString(x, 22, "QiMingXing", UI_ACCENT, UI_BG, 3);
+
+    /* "LianYan & -e-" 三色分段显示（与 bootloader 一致），水平居中 */
+    {
+        uint16_t cx = (TFT_WIDTH - 168U) / 2U;   /* 总宽：7+1+1+3 字符 ×12px = 144px */
+        TFT_DrawString(cx, 60, "LianYan", UI_ACCENT, UI_BG, 2);  cx += 7 * 12;
+        TFT_DrawString(cx, 60, " ", UI_TEXT_DIM, UI_BG, 2);       cx += 12;
+        TFT_DrawString(cx, 60, "&", UI_WARN, UI_BG, 2);           cx += 12;
+        TFT_DrawString(cx, 60, " ", UI_TEXT_DIM, UI_BG, 2);       cx += 12;
+        TFT_DrawString(cx, 60, "-e-", UI_ACCENT2, UI_BG, 2);      cx += 3 * 12;
+    }
+
+    /* 进度条：更大（宽 200 高 14） */
+    TFT_FillRect(20, 98, 200, 1, UI_CARD_EDGE);
+    TFT_FillRect(20, 111, 200, 1, UI_CARD_EDGE);
+    TFT_FillRect(20, 98, 1, 14, UI_CARD_EDGE);
+    TFT_FillRect(219, 98, 1, 14, UI_CARD_EDGE);
+    for (int i = 0; i < 198; i += 2) {
+        TFT_FillRect(21 + i, 99, 2, 12, UI_ACCENT);
         Delay_ms(8);
+    }
+}
+
+/* 通用横屏标题栏：深色底 + 分隔线 + 居中标题 */
+static void draw_page_title(const char *title, uint16_t accent)
+{
+    TFT_FillRect(0, 0, TFT_WIDTH, 24, UI_TITLE_BG);
+    TFT_FillRect(0, 24, TFT_WIDTH, 1, UI_CARD_EDGE);
+    TFT_DrawString((TFT_WIDTH - (uint16_t)(strlen(title) * 12U)) / 2U,
+                   6, title, accent, UI_TITLE_BG, 2);
+}
+
+/* 主界面 4 张卡片的位置（横屏 240x135，无标题栏，2x2 小卡 + 底部时间栏） */
+static void main_card_rect(uint8_t item, uint16_t *x, uint16_t *y, uint16_t *w, uint16_t *h)
+{
+    static const uint16_t card_w = 105;
+    static const uint16_t card_h = 38;
+    static const uint16_t gap = 6;
+    static const uint16_t top = 4;
+    switch (item) {
+    case 0: *x = 6;            *y = top; break;              /* TEMP */
+    case 1: *x = 6 + card_w + gap; *y = top; break;          /* 湿度 */
+    case 2: *x = 6;            *y = top + card_h + gap; break; /* WEIGHT */
+    case 3: *x = 6 + card_w + gap; *y = top + card_h + gap; break; /* PTC */
+    default:*x = 6; *y = top + (card_h + gap) * 2 + 2; *w = 228; *h = 32; return; /* 时间栏 */
+    }
+    *w = card_w;
+    *h = card_h;
+}
+
+/* 绘制单张主界面卡片：图标左上 + 标签 + 数值 + 单位，圆角更圆润 */
+static void draw_main_card(uint8_t item, uint16_t x, uint16_t y,
+                           uint16_t w, uint16_t h, uint16_t bg,
+                           const char *label, const char *value,
+                           uint16_t val_color, uint8_t selected)
+{
+    uint16_t fill = selected ? UI_CARD_HI : bg;
+    fill_round_rect(x, y, w, h, fill, 9);
+    draw_frame(x, y, w, h, selected ? UI_ACCENT : UI_CARD_EDGE);
+
+    /* 图标：卡片左上角 */
+    switch (item) {
+    case 0:  draw_icon_temp(x + 8, y + 10); break;
+    case 1:  draw_icon_humi(x + 8, y + 10); break;
+    case 2:  draw_icon_weight(x + 8, y + 10); break;
+    case 3:  draw_icon_ptc(x + 8, y + 10); break;
+    default: draw_icon_clock(x + 8, y + 10); break;
+    }
+
+    /* 标签：图标右侧 */
+    TFT_DrawString(x + 24, y + 3, label, UI_TEXT_DIM, fill, 1);
+
+    /* 数值：卡片右侧居中（含单位） */
+    {
+        uint8_t vw = (uint8_t)(strlen(value) * 12U);
+        uint16_t vx = (uint16_t)(x + 26 + (w - 26U - vw) / 2U);
+        TFT_DrawString(vx, y + 14, value, val_color, fill, 2);
+    }
+}
+
+/* 局部刷新单张主界面卡片（不整屏重绘，SGL 脏矩形思路） */
+void UI_RefreshCard(uint8_t item)
+{
+    char buf[32];
+    uint16_t x, y, w, h;
+    main_card_rect(item, &x, &y, &w, &h);
+
+    if (item == 4) {
+        uint32_t hh, mm, ss;
+        uint16_t fill = (g_sys.selected_item == 4) ? UI_CARD_HI : CARD_BG_TIME;
+        fill_round_rect(x, y, w, h, fill, 9);
+        draw_frame(x, y, w, h, (g_sys.selected_item == 4) ? UI_ACCENT : UI_CARD_EDGE);
+        draw_icon_clock(x + 10, y + 9);
+        TFT_DrawString(x + 28, y + 4, "TIME", UI_TEXT_DIM, fill, 1);
+        hh = g_sys.params.dry_time_sec / 3600;
+        mm = (g_sys.params.dry_time_sec % 3600) / 60;
+        ss = g_sys.params.dry_time_sec % 60;
+        sprintf(buf, "%02lu:%02lu:%02lu", hh, mm, ss);
+        TFT_DrawString(x + (w - 8U * 12U) / 2U, y + 3, buf, UI_ACCENT, fill, 2);
+        return;
+    }
+
+    switch (item) {
+    case 0:
+        sprintf(buf, "%.1f", g_sys.current_temp);
+        draw_main_card(0, x, y, w, h, CARD_BG_TEMP, "TEMP", buf, UI_WARN,
+                       g_sys.selected_item == 0);
+        draw_degree(x + w - 16, y + 18, UI_WARN, 1);
+        TFT_DrawString(x + w - 12, y + 17, "C", UI_TEXT_DIM,
+                       (g_sys.selected_item == 0) ? UI_CARD_HI : CARD_BG_TEMP, 1);
+        break;
+    case 1:
+        sprintf(buf, "%.1f%%", g_sys.current_humidity);
+        draw_main_card(1, x, y, w, h, CARD_BG_HUMI, "HUMI", buf, UI_CYAN,
+                       g_sys.selected_item == 1);
+        break;
+    case 2:
+        sprintf(buf, "%.1f", g_sys.weight_g);
+        draw_main_card(2, x, y, w, h, CARD_BG_WEIGHT, "WEIGHT", buf, UI_PURPLE,
+                       g_sys.selected_item == 2);
+        TFT_DrawString(x + w - 14, y + 17, "g", UI_TEXT_DIM,
+                       (g_sys.selected_item == 2) ? UI_CARD_HI : CARD_BG_WEIGHT, 1);
+        break;
+    default:
+        sprintf(buf, "%.1f", g_sys.ptc_temp);
+        draw_main_card(3, x, y, w, h, CARD_BG_PTC, "PTC", buf, UI_ACCENT2,
+                       g_sys.selected_item == 3);
+        draw_degree(x + w - 16, y + 18, UI_ACCENT2, 1);
+        TFT_DrawString(x + w - 12, y + 17, "C", UI_TEXT_DIM,
+                       (g_sys.selected_item == 3) ? UI_CARD_HI : CARD_BG_PTC, 1);
+        break;
     }
 }
 
 void UI_DrawMainScreen(void)
 {
     char buf[32];
-    uint16_t cy;
     uint32_t h, m, s;
+    uint16_t cy;
     const char *state_str[] = {"IDLE", "HEAT", "DRY", "COOL", "DONE"};
-    uint16_t state_color[] = {COLOR_GRAY, COLOR_RED, COLOR_ORANGE, COLOR_CYAN, COLOR_GREEN};
+    uint16_t state_color[] = {UI_TEXT_DIM, UI_ACCENT2, UI_WARN, UI_ACCENT, UI_OK};
 
-    TFT_FillScreen(COLOR_BLACK);
+    const uint16_t card_w = 105;
+    const uint16_t card_h = 38;
+    const uint16_t gap = 6;
+    const uint16_t top = 4;
 
-    TFT_FillRect(0, 0, TFT_WIDTH, 22, COLOR_DARKGRAY);
-    if (g_sys.drying_active) TFT_DrawString(5, 4, "RUNNING", COLOR_GREEN, COLOR_DARKGRAY, 1);
-    else TFT_DrawString(5, 4, "DRYER", COLOR_WHITE, COLOR_DARKGRAY, 1);
-    if (g_sys.wifi_enabled)
-        TFT_DrawString(80, 4, g_sys.wifi_connected ? "W" : "w",
-                       g_sys.wifi_connected ? COLOR_GREEN : COLOR_GRAY, COLOR_DARKGRAY, 1);
-    TFT_DrawString(100, 4, state_str[g_sys.run_state],
-                   state_color[g_sys.run_state], COLOR_DARKGRAY, 1);
+    TFT_FillScreen(UI_BG);
 
-    cy = 25;
-    draw_card_bg(cy, COLOR_ORANGE);
-    draw_icon_temp(8, cy + 6);
-    TFT_DrawString(18, cy + 2, "TEMP", COLOR_GRAY, COLOR_BLACK, 1);
+    /* ── 卡1 TEMP（值 + °C 单位） ── */
     sprintf(buf, "%.1f", g_sys.current_temp);
-    TFT_DrawString(60, cy, buf, COLOR_WHITE, COLOR_BLACK, 2);
-    draw_degree(104, cy + 2, COLOR_ORANGE, 1);
-    sprintf(buf, "%d", g_sys.params.target_temp);
-    TFT_DrawString(60, cy + 16, buf, COLOR_ORANGE, COLOR_BLACK, 1);
-    draw_degree(72, cy + 16, COLOR_ORANGE, 1);
-    if (g_sys.selected_item == 0) draw_frame(0, cy, TFT_WIDTH, CARD_H, COLOR_WHITE);
+    draw_main_card(0, 6, top, card_w, card_h, CARD_BG_TEMP,
+                   "TEMP", buf, UI_WARN, g_sys.selected_item == 0);
+    draw_degree(6 + card_w - 16, top + 18, UI_WARN, 1);
+    TFT_DrawString(6 + card_w - 12, top + 17, "C", UI_TEXT_DIM,
+                   (g_sys.selected_item == 0) ? UI_CARD_HI : CARD_BG_TEMP, 1);
 
-    cy = 25 + CARD_H + CARD_GAP;
-    draw_card_bg(cy, COLOR_MAGENTA);
-    draw_icon_weight(8, cy + 6);
-    TFT_DrawString(18, cy + 2, "WEIGHT", COLOR_GRAY, COLOR_BLACK, 1);
+    /* ── 卡2 湿度 ── */
+    sprintf(buf, "%.1f%%", g_sys.current_humidity);
+    draw_main_card(1, 6 + card_w + gap, top, card_w, card_h, CARD_BG_HUMI,
+                   "HUMI", buf, UI_CYAN, g_sys.selected_item == 1);
+
+    /* ── 卡3 WEIGHT（值 + g 单位） ── */
     sprintf(buf, "%.1f", g_sys.weight_g);
-    TFT_DrawString(60, cy + 4, buf, COLOR_MAGENTA, COLOR_BLACK, 2);
-    TFT_DrawString(104, cy + 6, "g", COLOR_MAGENTA, COLOR_BLACK, 1);
-    if (g_sys.selected_item == 1) draw_frame(0, cy, TFT_WIDTH, CARD_H, COLOR_WHITE);
+    draw_main_card(2, 6, top + card_h + gap, card_w, card_h, CARD_BG_WEIGHT,
+                   "WEIGHT", buf, UI_PURPLE, g_sys.selected_item == 2);
+    TFT_DrawString(6 + card_w - 14, top + card_h + gap + 17, "g", UI_TEXT_DIM,
+                   (g_sys.selected_item == 2) ? UI_CARD_HI : CARD_BG_WEIGHT, 1);
 
-    cy = 25 + (CARD_H + CARD_GAP) * 2;
-    draw_card_bg(cy, COLOR_CYAN);
-    draw_icon_clock(8, cy + 6);
-    TFT_DrawString(18, cy + 2, "TIME", COLOR_GRAY, COLOR_BLACK, 1);
+    /* ── 卡4 PTC（值 + °C 单位） ── */
+    sprintf(buf, "%.1f", g_sys.ptc_temp);
+    draw_main_card(3, 6 + card_w + gap, top + card_h + gap, card_w, card_h, CARD_BG_PTC,
+                   "PTC", buf, UI_ACCENT2, g_sys.selected_item == 3);
+    draw_degree(6 + card_w + gap + card_w - 16, top + card_h + gap + 18, UI_ACCENT2, 1);
+    TFT_DrawString(6 + card_w + gap + card_w - 12, top + card_h + gap + 17, "C", UI_TEXT_DIM,
+                   (g_sys.selected_item == 3) ? UI_CARD_HI : CARD_BG_PTC, 1);
+
+    /* ── 底部：烘干时间独立一栏 ── */
+    cy = top + (card_h + gap) * 2 + 2;
+    fill_round_rect(6, cy, 228, 32,
+                    (g_sys.selected_item == 4) ? UI_CARD_HI : CARD_BG_TIME, 9);
+    draw_frame(6, cy, 228, 32,
+               (g_sys.selected_item == 4) ? UI_ACCENT : UI_CARD_EDGE);
+    draw_icon_clock(16, cy + 9);
+    TFT_DrawString(34, cy + 4, "TIME", UI_TEXT_DIM,
+                   (g_sys.selected_item == 4) ? UI_CARD_HI : CARD_BG_TIME, 1);
     h = g_sys.params.dry_time_sec / 3600;
     m = (g_sys.params.dry_time_sec % 3600) / 60;
     s = g_sys.params.dry_time_sec % 60;
     sprintf(buf, "%02lu:%02lu:%02lu", h, m, s);
-    TFT_DrawString(60, cy + 4, buf, COLOR_CYAN, COLOR_BLACK, 2);
+    /* 时间数字：在时间栏内水平居中 */
+    TFT_DrawString(6 + (228U - 8U * 12U) / 2U, cy + 3, buf, UI_ACCENT,
+                   (g_sys.selected_item == 4) ? UI_CARD_HI : CARD_BG_TIME, 2);
+    TFT_DrawString(175, cy + 5, state_str[g_sys.run_state],
+                   state_color[g_sys.run_state],
+                   (g_sys.selected_item == 4) ? UI_CARD_HI : CARD_BG_TIME, 1);
     if (g_sys.run_state == STATE_DRYING) {
         h = g_sys.remaining_sec / 3600;
         m = (g_sys.remaining_sec % 3600) / 60;
         s = g_sys.remaining_sec % 60;
         sprintf(buf, "REM %02lu:%02lu:%02lu", h, m, s);
-        TFT_DrawString(60, cy + 18, buf, COLOR_GREEN, COLOR_BLACK, 1);
-    }
-    if (g_sys.selected_item == 2) draw_frame(0, cy, TFT_WIDTH, CARD_H, COLOR_WHITE);
-
-    cy = 25 + (CARD_H + CARD_GAP) * 3;
-    draw_card_bg(cy, COLOR_RED);
-    draw_icon_ptc(8, cy + 6);
-    TFT_DrawString(18, cy + 2, "PTC", COLOR_GRAY, COLOR_BLACK, 1);
-    sprintf(buf, "%.1f", g_sys.ptc_temp);
-    TFT_DrawString(60, cy + 4, buf, COLOR_RED, COLOR_BLACK, 2);
-    draw_degree(104, cy + 6, COLOR_RED, 1);
-    if (g_sys.selected_item == 3) draw_frame(0, cy, TFT_WIDTH, CARD_H, COLOR_WHITE);
-
-    if (g_sys.run_state != STATE_IDLE) {
-        uint8_t pct = (g_sys.run_state == STATE_DRYING && g_sys.params.dry_time_sec > 0)
-            ? (uint8_t)(100 - g_sys.remaining_sec * 100U / g_sys.params.dry_time_sec) : 0;
-        TFT_FillRect(5, 218, 125, 1, COLOR_WHITE);
-        TFT_FillRect(5, 227, 125, 1, COLOR_WHITE);
-        TFT_FillRect(5, 218, 1, 10, COLOR_WHITE);
-        TFT_FillRect(129, 218, 1, 10, COLOR_WHITE);
-        TFT_FillRect(6, 219, (uint16_t)(123U * pct / 100U), 8, COLOR_GREEN);
+        TFT_DrawString(6 + (228U - 16U * 6U) / 2U, cy + 19, buf, UI_OK,
+                       (g_sys.selected_item == 4) ? UI_CARD_HI : CARD_BG_TIME, 1);
     }
 }
 
 void UI_DrawWeightScreen(void)
 {
     char buf[32];
-    TFT_FillScreen(COLOR_BLACK);
-    TFT_DrawString(20, 20, "WEIGHT TOOL", COLOR_WHITE, COLOR_BLACK, 2);
+    TFT_FillScreen(UI_BG);
+    draw_page_title("WEIGHT TOOL", UI_ACCENT2);
     sprintf(buf, "Current: %.1fg", g_sys.weight_g);
-    TFT_DrawString(10, 60, buf, COLOR_MAGENTA, COLOR_BLACK, 2);
-    draw_btn(90, "> Tare", COLOR_YELLOW, g_sys.selected_item == 0);
-    draw_btn(114, "  Exit", COLOR_GRAY, g_sys.selected_item == 1);
-    TFT_DrawString(10, 160, "Click: Select", COLOR_GRAY, COLOR_BLACK, 1);
+    TFT_DrawString(30, 50, buf, UI_ACCENT2, UI_BG, 2);
+    fill_round_rect(10, 80, 220, 26, UI_CARD, 6);
+    if (g_sys.selected_item == 0) {
+        TFT_DrawString(20, 87, "> Tare", UI_WARN, UI_CARD, 1);
+        TFT_DrawString(120, 87, "  Exit", UI_TEXT_DIM, UI_CARD, 1);
+    } else {
+        TFT_DrawString(20, 87, "  Tare", UI_TEXT_DIM, UI_CARD, 1);
+        TFT_DrawString(120, 87, "> Exit", UI_WARN, UI_CARD, 1);
+    }
+    TFT_DrawString(60, 118, "Click: Select", UI_TEXT_DIM, UI_BG, 1);
 }
 
 void UI_DrawTempAdjust(void)
 {
     char buf[16];
-    TFT_FillScreen(COLOR_BLACK);
-    TFT_DrawString(15, 20, "TEMP SETTINGS", COLOR_WHITE, COLOR_BLACK, 2);
-    TFT_DrawString(10, 60, "> Set Temp", COLOR_GRAY, COLOR_BLACK, 1);
+    TFT_FillScreen(UI_BG);
+    draw_page_title("TEMP SETTINGS", UI_WARN);
+    if (g_sys.selected_item == 0) {
+        TFT_DrawString(10, 40, "> Set Temp", UI_TEXT, UI_BG, 1);
+        TFT_DrawString(150, 40, "  PID Autotune", UI_TEXT_DIM, UI_BG, 1);
+    } else if (g_sys.selected_item == 1) {
+        TFT_DrawString(10, 40, "  Set Temp", UI_TEXT_DIM, UI_BG, 1);
+        TFT_DrawString(150, 40, "> PID Autotune", UI_TEXT, UI_BG, 1);
+    } else {
+        TFT_DrawString(10, 40, "  Set Temp", UI_TEXT_DIM, UI_BG, 1);
+        TFT_DrawString(150, 40, "  PID Autotune", UI_TEXT_DIM, UI_BG, 1);
+    }
     sprintf(buf, "%d", g_sys.params.target_temp);
-    TFT_DrawString(90, 60, buf, COLOR_ORANGE, COLOR_BLACK, 1);
-    draw_degree(102, 60, COLOR_ORANGE, 1);
-    TFT_DrawString(10, 90, "  PID Autotune", COLOR_GRAY, COLOR_BLACK, 1);
-    draw_btn(160, "  Exit", COLOR_GRAY, g_sys.selected_item == 2);
-    if (g_sys.selected_item == 0) draw_frame(8, 57, 120, 18, COLOR_WHITE);
-    if (g_sys.selected_item == 1) draw_frame(8, 87, 120, 18, COLOR_WHITE);
-    if (g_sys.selected_item == 2) draw_frame(5, 160, 125, BTN_H, COLOR_WHITE);
-    TFT_DrawString(10, 130, "Rotate: Select", COLOR_GRAY, COLOR_BLACK, 1);
-    TFT_DrawString(10, 145, "Click: Enter", COLOR_GRAY, COLOR_BLACK, 1);
+    TFT_DrawString(10, 70, buf, UI_WARN, UI_BG, 3);
+    draw_degree(70, 72, UI_WARN, 2);
+    TFT_DrawString(10, 105, "Rotate: Select  Click: Enter", UI_TEXT_DIM, UI_BG, 1);
+    fill_round_rect(10, 118, 220, 1, UI_CARD_EDGE, 0);
 }
 
 void UI_DrawTempEdit(void)
 {
     char buf[16];
-    TFT_FillScreen(COLOR_BLACK);
+    TFT_FillScreen(UI_BG);
     TFT_DrawString(5, 20, "SET TARGET TEMP", COLOR_WHITE, COLOR_BLACK, 2);
     sprintf(buf, "%d", g_sys.params.target_temp);
     TFT_DrawString(30, 70, buf, COLOR_ORANGE, COLOR_BLACK, 4);
@@ -259,7 +480,7 @@ void UI_DrawTempEdit(void)
 void UI_DrawTempPid(void)
 {
     char buf[32];
-    TFT_FillScreen(COLOR_BLACK);
+    TFT_FillScreen(UI_BG);
     TFT_DrawString(5, 10, "TEMP PID TUNE", COLOR_WHITE, COLOR_BLACK, 2);
     sprintf(buf, "Cal: %d", g_sys.params.target_temp);
     TFT_DrawString(10, 40, buf, COLOR_ORANGE, COLOR_BLACK, 1);
@@ -289,7 +510,7 @@ void UI_DrawTimeAdjust(void)
     uint32_t h = g_sys.params.dry_time_sec / 3600;
     uint32_t m = (g_sys.params.dry_time_sec % 3600) / 60;
     uint32_t s = g_sys.params.dry_time_sec % 60;
-    TFT_FillScreen(COLOR_BLACK);
+    TFT_FillScreen(UI_BG);
     TFT_DrawString(25, 10, "SET TIME", COLOR_WHITE, COLOR_BLACK, 2);
     sprintf(buf, "%02lu", h);
     TFT_DrawString(12, 50, buf, COLOR_CYAN, COLOR_BLACK, 3);
@@ -302,9 +523,9 @@ void UI_DrawTimeAdjust(void)
     TFT_DrawString(120, 50, "s", COLOR_GRAY, COLOR_BLACK, 1);
     TFT_DrawString(48, 53, ":", COLOR_WHITE, COLOR_BLACK, 2);
     TFT_DrawString(96, 53, ":", COLOR_WHITE, COLOR_BLACK, 2);
-    if (g_sys.time_cursor == TIME_FIELD_HOUR) draw_frame(10, 48, 42, 28, COLOR_GRAY);
-    if (g_sys.time_cursor == TIME_FIELD_MIN) draw_frame(58, 48, 42, 28, COLOR_GRAY);
-    if (g_sys.time_cursor == TIME_FIELD_SEC) draw_frame(106, 48, 20, 28, COLOR_GRAY);
+    if (g_sys.time_cursor == TIME_FIELD_HOUR) draw_frame(10, 48, 42, 28, UI_TEXT_DIM);
+    if (g_sys.time_cursor == TIME_FIELD_MIN) draw_frame(58, 48, 42, 28, UI_TEXT_DIM);
+    if (g_sys.time_cursor == TIME_FIELD_SEC) draw_frame(106, 48, 20, 28, UI_TEXT_DIM);
     draw_btn(160, "  Edit", COLOR_YELLOW, g_sys.selected_item == 0);
     draw_btn(184, "  Exit", COLOR_GRAY, g_sys.selected_item == 1);
     TFT_DrawString(10, 140, "Rotate: Cursor", COLOR_GRAY, COLOR_BLACK, 1);
@@ -316,7 +537,7 @@ void UI_DrawTimeEdit(void)
     uint32_t h = g_sys.params.dry_time_sec / 3600;
     uint32_t m = (g_sys.params.dry_time_sec % 3600) / 60;
     uint32_t s = g_sys.params.dry_time_sec % 60;
-    TFT_FillScreen(COLOR_BLACK);
+    TFT_FillScreen(UI_BG);
     TFT_DrawString(5, 10, "EDIT TIME", COLOR_YELLOW, COLOR_BLACK, 2);
     sprintf(buf, "%02lu", h);
     TFT_DrawString(12, 50, buf, COLOR_WHITE, COLOR_BLACK, 3);
@@ -340,7 +561,7 @@ void UI_DrawTimeEdit(void)
 void UI_DrawPtcAdjust(void)
 {
     char buf[16];
-    TFT_FillScreen(COLOR_BLACK);
+    TFT_FillScreen(UI_BG);
     TFT_DrawString(15, 20, "PTC SETTINGS", COLOR_WHITE, COLOR_BLACK, 2);
     TFT_DrawString(10, 60, "> Max Temp", COLOR_GRAY, COLOR_BLACK, 1);
     sprintf(buf, "%d", g_sys.params.ptc_max_temp);
@@ -362,7 +583,7 @@ void UI_DrawPtcAdjust(void)
 void UI_DrawPtcEdit(void)
 {
     char buf[16];
-    TFT_FillScreen(COLOR_BLACK);
+    TFT_FillScreen(UI_BG);
     TFT_DrawString(5, 20, "MAX PTC TEMP", COLOR_WHITE, COLOR_BLACK, 2);
     sprintf(buf, "%d", g_sys.params.ptc_max_temp);
     TFT_DrawString(30, 70, buf, COLOR_RED, COLOR_BLACK, 4);
@@ -375,7 +596,7 @@ void UI_DrawPtcEdit(void)
 void UI_DrawPtcCoolingEdit(void)
 {
     char buf[16];
-    TFT_FillScreen(COLOR_BLACK);
+    TFT_FillScreen(UI_BG);
     TFT_DrawString(5, 20, "COOLING TEMP", COLOR_WHITE, COLOR_BLACK, 2);
     sprintf(buf, "%d", g_sys.params.ptc_cooling_temp);
     TFT_DrawString(30, 70, buf, COLOR_CYAN, COLOR_BLACK, 4);
@@ -388,7 +609,7 @@ void UI_DrawPtcCoolingEdit(void)
 void UI_DrawPidAutotune(void)
 {
     char buf[32];
-    TFT_FillScreen(COLOR_BLACK);
+    TFT_FillScreen(UI_BG);
     TFT_DrawString(5, 10, "PID AUTOTUNE", COLOR_WHITE, COLOR_BLACK, 2);
     TFT_DrawString(10, 40, "Status:", COLOR_GRAY, COLOR_BLACK, 1);
     if (g_sys.pid_autotune_running) {
@@ -412,32 +633,24 @@ void UI_DrawPidAutotune(void)
 
 void UI_DrawMenu(void)
 {
-    TFT_FillScreen(COLOR_BLACK);
-    TFT_DrawString(40, 10, "MENU", COLOR_WHITE, COLOR_BLACK, 2);
+    const char *items[] = {"Start/Stop", "WiFi", "Motor", "About", "Reset", "Exit"};
+    uint8_t i;
 
-    draw_icon_start();
-    if (g_sys.drying_active) TFT_DrawString(40, 55, "Stop", COLOR_GREEN, COLOR_BLACK, 2);
-    else TFT_DrawString(40, 55, "Start", COLOR_GREEN, COLOR_BLACK, 2);
-    if (g_sys.selected_item == 0) draw_frame(5, 50, 125, 25, COLOR_WHITE);
+    TFT_FillScreen(UI_BG);
+    TFT_FillRect(0, 0, TFT_WIDTH, 24, UI_TITLE_BG);
+    TFT_FillRect(0, 24, TFT_WIDTH, 1, UI_CARD_EDGE);
+    TFT_DrawString((TFT_WIDTH - 5 * 12U) / 2U, 6, "MENU", UI_ACCENT, UI_TITLE_BG, 2);
 
-    draw_icon_menu();
-    TFT_DrawString(40, 85, "WiFi", COLOR_WHITE, COLOR_BLACK, 2);
-    if (g_sys.selected_item == 1) draw_frame(5, 80, 125, 25, COLOR_WHITE);
-
-    draw_icon_motor();
-    TFT_DrawString(40, 115, "Motor", COLOR_WHITE, COLOR_BLACK, 2);
-    if (g_sys.selected_item == 2) draw_frame(5, 110, 125, 25, COLOR_WHITE);
-
-    draw_icon_info();
-    TFT_DrawString(40, 145, "About", COLOR_WHITE, COLOR_BLACK, 2);
-    if (g_sys.selected_item == 3) draw_frame(5, 140, 125, 25, COLOR_WHITE);
-
-    draw_icon_gear();
-    TFT_DrawString(40, 175, "Reset", COLOR_WHITE, COLOR_BLACK, 2);
-    if (g_sys.selected_item == 4) draw_frame(5, 170, 125, 25, COLOR_WHITE);
-
-    draw_btn(210, "  Exit", COLOR_GRAY, g_sys.selected_item == 5);
-    if (g_sys.selected_item == 5) draw_frame(5, 210, 125, BTN_H, COLOR_WHITE);
+    /* 菜单项：选中项蓝底白字，未选中透明灰字 */
+    for (i = 0; i < 6; i++) {
+        uint16_t y = (uint16_t)(32 + i * 17);
+        if (i == g_sys.selected_item) {
+            fill_round_rect(8, y, 224, 14, UI_ACCENT, 7);
+            TFT_DrawString(18, y + 3, items[i], UI_TEXT, UI_ACCENT, 1);
+        } else {
+            TFT_DrawString(18, y + 3, items[i], UI_TEXT_DIM, UI_BG, 1);
+        }
+    }
 }
 
 void UI_DrawMotorAdjust(void)
@@ -446,7 +659,7 @@ void UI_DrawMotorAdjust(void)
     uint8_t is_tmc = (g_sys.params.motor_driver == MOTOR_DRIVER_TMC2209);
     uint8_t count = is_tmc ? 9 : 6;
 
-    TFT_FillScreen(COLOR_BLACK);
+    TFT_FillScreen(UI_BG);
     TFT_DrawString(15, 5, "MOTOR SETTINGS", COLOR_WHITE, COLOR_BLACK, 2);
 
     sprintf(buf, "> Linkage: %s", g_sys.params.motor_enabled ? "ON" : "OFF");
@@ -484,7 +697,7 @@ void UI_DrawMotorEdit(void)
     int idx = g_sys.submenu_active;
     uint8_t is_tmc = (g_sys.params.motor_driver == MOTOR_DRIVER_TMC2209);
 
-    TFT_FillScreen(COLOR_BLACK);
+    TFT_FillScreen(UI_BG);
     TFT_DrawString(5, 10, "EDIT PARAM", COLOR_WHITE, COLOR_BLACK, 2);
 
     switch (idx) {
@@ -508,7 +721,7 @@ void UI_DrawAbout(void)
 {
     char buf[64];
     uint32_t id = g_sys.device_id;
-    TFT_FillScreen(COLOR_BLACK);
+    TFT_FillScreen(UI_BG);
     TFT_DrawString(5, 10, "About", COLOR_WHITE, COLOR_BLACK, 2);
     TFT_DrawString(5, 40, "DRYER V1.0", COLOR_YELLOW, COLOR_BLACK, 3);
     sprintf(buf, "Ver: %s", APP_VERSION);
@@ -525,7 +738,7 @@ void UI_DrawAbout(void)
 
 void UI_DrawWiFiScreen(void)
 {
-    TFT_FillScreen(COLOR_BLACK);
+    TFT_FillScreen(UI_BG);
     TFT_DrawString(35, 10, "WIFI", COLOR_WHITE, COLOR_BLACK, 2);
     if (!g_sys.wifi_enabled) {
         TFT_DrawString(10, 60, "WiFi: OFF", COLOR_GRAY, COLOR_BLACK, 2);
@@ -548,11 +761,25 @@ void UI_DrawWiFiScreen(void)
     if (g_sys.selected_item == 0) draw_frame(5, 184, 125, BTN_H, COLOR_WHITE);
 }
 
+static uint8_t ota_screen_drawn = 0;
+
+/* 重新进入 OTA 界面时调用，下次 UI_DrawOTAScreen 会整屏重画 */
+void UI_ResetOTAScreen(void)
+{
+    ota_screen_drawn = 0;
+}
+
 void UI_DrawOTAScreen(void)
 {
-    TFT_FillScreen(COLOR_BLACK);
-    TFT_DrawString(25, 10, "FIRMWARE", COLOR_WHITE, COLOR_BLACK, 2);
+    if (!ota_screen_drawn) {
+        ota_screen_drawn = 1;
+        TFT_FillScreen(UI_BG);
+        TFT_DrawString(25, 10, "FIRMWARE", COLOR_WHITE, COLOR_BLACK, 2);
+        draw_btn(184, "  Exit", COLOR_GRAY, g_sys.selected_item == 0);
+        if (g_sys.selected_item == 0) draw_frame(5, 184, 125, BTN_H, COLOR_WHITE);
+    }
     if (g_sys.ota_downloading) {
+        TFT_FillRect(10, 55, 120, 30, COLOR_BLACK);
         TFT_DrawString(10, 60, "Downloading...", COLOR_YELLOW, COLOR_BLACK, 1);
         TFT_FillRect(10, 90, 115, 1, COLOR_WHITE);
         TFT_FillRect(10, 99, 115, 1, COLOR_WHITE);
@@ -561,18 +788,19 @@ void UI_DrawOTAScreen(void)
         TFT_FillRect(11, 91, (113 * g_sys.ota_progress) / 100, 8, COLOR_GREEN);
         char buf[32];
         sprintf(buf, "%d%% (%lu/%lu)", g_sys.ota_progress, g_sys.ota_received_size, g_sys.ota_total_size);
+        TFT_FillRect(10, 110, 120, 12, COLOR_BLACK);
         TFT_DrawString(10, 115, buf, COLOR_GRAY, COLOR_BLACK, 1);
     } else if (g_sys.ota_download_done) {
+        TFT_FillRect(10, 55, 120, 60, COLOR_BLACK);
         TFT_DrawString(10, 60, "Download OK!", COLOR_GREEN, COLOR_BLACK, 2);
         TFT_DrawString(10, 100, "Click to Update", COLOR_YELLOW, COLOR_BLACK, 1);
         TFT_DrawString(10, 120, "Device will restart", COLOR_GRAY, COLOR_BLACK, 1);
     } else {
+        TFT_FillRect(10, 55, 120, 60, COLOR_BLACK);
         TFT_DrawString(10, 60, "Drag firmware", COLOR_GRAY, COLOR_BLACK, 1);
         TFT_DrawString(10, 80, "to web page", COLOR_GRAY, COLOR_BLACK, 1);
         TFT_DrawString(10, 110, "and click Upload", COLOR_GRAY, COLOR_BLACK, 1);
     }
-    draw_btn(184, "  Exit", COLOR_GRAY, g_sys.selected_item == 0);
-    if (g_sys.selected_item == 0) draw_frame(5, 184, 125, BTN_H, COLOR_WHITE);
 }
 
 void UI_DrawSafetyAlert(void)
@@ -615,7 +843,10 @@ void UI_Update(void)
             case SCREEN_MOTOR_EDIT:    UI_DrawMotorEdit(); break;
             case SCREEN_ABOUT:         UI_DrawAbout(); break;
             case SCREEN_WIFI:          UI_DrawWiFiScreen(); break;
-            case SCREEN_OTA:           UI_DrawOTAScreen(); break;
+            case SCREEN_OTA:
+                UI_ResetOTAScreen();
+                UI_DrawOTAScreen();
+                break;
             case SCREEN_SAFETY_ALERT:  UI_DrawSafetyAlert(); break;
         }
     } else {
@@ -642,31 +873,46 @@ void UI_UpdateMainDynamic(void)
 {
     char buf[32];
     uint32_t h, m, s;
+    const uint16_t card_w = 105;
+    const uint16_t gap = 6;
+    const uint16_t c2x = 6 + card_w + gap;   /* 第二列 x */
 
+    /* TEMP 卡（值居中 + 单位°C） */
     sprintf(buf, "%.1f", g_sys.current_temp);
-    TFT_DrawString(60, 25, buf, COLOR_WHITE, COLOR_BLACK, 2);
+    TFT_DrawString(6 + 26U + (card_w - 26U - 4U * 12U) / 2U, 18, buf, UI_WARN, CARD_BG_TEMP, 2);
+
+    /* 湿度卡 */
+    sprintf(buf, "%.1f%%", g_sys.current_humidity);
+    TFT_DrawString(c2x + 26U + (card_w - 26U - 5U * 12U) / 2U, 18, buf, UI_CYAN, CARD_BG_HUMI, 2);
+
+    /* WEIGHT 卡（值居中 + 单位 g） */
     sprintf(buf, "%.1f", g_sys.weight_g);
-    TFT_DrawString(60, 59, buf, COLOR_MAGENTA, COLOR_BLACK, 2);
+    TFT_DrawString(6 + 26U + (card_w - 26U - 4U * 12U) / 2U, 62, buf, UI_PURPLE, CARD_BG_WEIGHT, 2);
+
+    /* PTC 卡（值居中 + 单位°C） */
+    sprintf(buf, "%.1f", g_sys.ptc_temp);
+    TFT_DrawString(c2x + 26U + (card_w - 26U - 4U * 12U) / 2U, 62, buf, UI_ACCENT2, CARD_BG_PTC, 2);
+
+    /* 烘干时间栏（底部，时间数字水平居中） */
     h = g_sys.params.dry_time_sec / 3600;
     m = (g_sys.params.dry_time_sec % 3600) / 60;
     s = g_sys.params.dry_time_sec % 60;
     sprintf(buf, "%02lu:%02lu:%02lu", h, m, s);
-    TFT_DrawString(60, 93, buf, COLOR_CYAN, COLOR_BLACK, 2);
+    TFT_DrawString(6 + (228U - 8U * 12U) / 2U, 91, buf, UI_ACCENT, CARD_BG_TIME, 2);
     if (g_sys.run_state == STATE_DRYING) {
         h = g_sys.remaining_sec / 3600;
         m = (g_sys.remaining_sec % 3600) / 60;
         s = g_sys.remaining_sec % 60;
         sprintf(buf, "REM %02lu:%02lu:%02lu", h, m, s);
-        TFT_DrawString(60, 107, buf, COLOR_GREEN, COLOR_BLACK, 1);
+        TFT_DrawString(6 + (228U - 16U * 6U) / 2U, 107, buf, UI_OK, CARD_BG_TIME, 1);
     }
-    sprintf(buf, "%.1f", g_sys.ptc_temp);
-    TFT_DrawString(60, 127, buf, COLOR_RED, COLOR_BLACK, 2);
-    if (g_sys.run_state != STATE_IDLE) {
-        uint8_t pct = (g_sys.run_state == STATE_DRYING && g_sys.params.dry_time_sec > 0)
-            ? (uint8_t)(100 - g_sys.remaining_sec * 100U / g_sys.params.dry_time_sec) : 0;
-        TFT_FillRect(6, 219, 123, 8, COLOR_BLACK);
-        TFT_FillRect(6, 219, (uint16_t)(123U * pct / 100U), 8, COLOR_GREEN);
-    }
+
+    /* 选中卡呼吸动画（局部色条） */
+    draw_card_pulse(6, 4, card_w, g_sys.selected_item == 0);
+    draw_card_pulse(c2x, 4, card_w, g_sys.selected_item == 1);
+    draw_card_pulse(6, 48, card_w, g_sys.selected_item == 2);
+    draw_card_pulse(c2x, 48, card_w, g_sys.selected_item == 3);
+    draw_card_pulse(6, 88, 228, g_sys.selected_item == 4);
 }
 
 static void Delay_ms(uint16_t ms)
