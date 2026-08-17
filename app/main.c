@@ -95,6 +95,7 @@ int main(void)
 
     Board_Init();
     Watchdog_Init();   /* App 自启看门狗，不依赖 Bootloader */
+    SystemTime_Init(); /* 启动 SysTick，供 SystemTime_Millis/Encoder 长按计时使用 */
 
     /* 上电长按编码器按钮(约1s) → 强制进入 Bootloader 下载模式（开 AP 收固件）。
      * 必须在任何阻塞外设初始化之前检测，避免传感器 init 卡住导致无法进入升级。 */
