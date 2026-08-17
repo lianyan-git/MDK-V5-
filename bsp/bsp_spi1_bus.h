@@ -24,6 +24,11 @@ Spi1BusStatus_t Spi1Bus_Transfer(const uint8_t *tx,
                                  uint8_t *rx,
                                  uint32_t length,
                                  uint32_t timeout_ms);
+/* TX-only DMA 发送（SPI1_TX = DMA1_Channel3）。调用前需已 Acquire+Select。
+ * 同步等待 DMA 完成并保证 SPI 移位寄存器清空后才返回。 */
+Spi1BusStatus_t Spi1Bus_TransferDma(const uint8_t *tx,
+                                    uint32_t length,
+                                    uint32_t timeout_ms);
 void Spi1Bus_Deselect(Spi1BusOwner_t owner);
 void Spi1Bus_Release(Spi1BusOwner_t owner);
 Spi1BusOwner_t Spi1Bus_GetOwner(void);

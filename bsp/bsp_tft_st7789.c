@@ -11,7 +11,9 @@
  * 与 bootloader bl_tft.c 完全一致 */
 #define TFT_X_OFFSET       40U
 #define TFT_Y_OFFSET       52U
-#define TFT_PIXEL_CHUNK    32U
+#define TFT_PIXEL_CHUNK    128U
+/* 小于此像素数的矩形用轮询 SPI（DMA 启动/等待开销大于小传输收益） */
+#define TFT_DMA_MIN_PIXELS 32U
 
 static const uint8_t font_digits[10][5] = {
     {0x3EU, 0x51U, 0x49U, 0x45U, 0x3EU},
@@ -75,6 +77,8 @@ static void glyph_for(char character, uint8_t columns[5])
         case '_': { static const uint8_t value[5] = {0x40U, 0x40U, 0x40U, 0x40U, 0x40U}; glyph = value; break; }
         case '/': { static const uint8_t value[5] = {0x20U, 0x10U, 0x08U, 0x04U, 0x02U}; glyph = value; break; }
         case '%': { static const uint8_t value[5] = {0x23U, 0x13U, 0x08U, 0x64U, 0x62U}; glyph = value; break; }
+        case '&': { static const uint8_t value[5] = {0x36U, 0x49U, 0x29U, 0x1AU, 0x40U}; glyph = value; break; }
+        case 0x27: { static const uint8_t value[5] = {0x00U, 0x06U, 0x04U, 0x00U, 0x00U}; glyph = value; break; }
         default: break;
         }
     }
@@ -103,6 +107,15 @@ static TftStatus_t write_part(int data_mode, const uint8_t *bytes, uint32_t leng
 {
     TftPort_SetDataMode(data_mode);
     if (Spi1Bus_Transfer(bytes, NULL, length, TFT_SPI_TIMEOUT_MS) != SPI1_BUS_OK) {
+        return TFT_ERROR_BUS;
+    }
+    return TFT_OK;
+}
+
+static TftStatus_t write_part_dma(const uint8_t *bytes, uint32_t length)
+{
+    TftPort_SetDataMode(1);
+    if (Spi1Bus_TransferDma(bytes, length, TFT_SPI_TIMEOUT_MS) != SPI1_BUS_OK) {
         return TFT_ERROR_BUS;
     }
     return TFT_OK;
@@ -256,7 +269,7 @@ void TFT_SetBacklight(uint8_t brightness)
 TftStatus_t TFT_FillRect(uint16_t x, uint16_t y,
                          uint16_t width, uint16_t height, uint16_t color)
 {
-    uint8_t pixels[TFT_PIXEL_CHUNK * 2U];
+    static uint8_t pixels[TFT_PIXEL_CHUNK * 2U];
     uint32_t remaining;
     uint32_t index;
     TftStatus_t result;
@@ -271,10 +284,18 @@ TftStatus_t TFT_FillRect(uint16_t x, uint16_t y,
     if (result != TFT_OK) return result;
     result = set_window(x, y, width, height);
     remaining = (uint32_t)width * (uint32_t)height;
-    while ((result == TFT_OK) && (remaining != 0U)) {
-        uint32_t count = (remaining > TFT_PIXEL_CHUNK) ? TFT_PIXEL_CHUNK : remaining;
-        result = write_part(1, pixels, count * 2U);
-        remaining -= count;
+    if (remaining >= TFT_DMA_MIN_PIXELS) {
+        while ((result == TFT_OK) && (remaining != 0U)) {
+            uint32_t count = (remaining > TFT_PIXEL_CHUNK) ? TFT_PIXEL_CHUNK : remaining;
+            result = write_part_dma(pixels, count * 2U);
+            remaining -= count;
+        }
+    } else {
+        while ((result == TFT_OK) && (remaining != 0U)) {
+            uint32_t count = (remaining > TFT_PIXEL_CHUNK) ? TFT_PIXEL_CHUNK : remaining;
+            result = write_part(1, pixels, count * 2U);
+            remaining -= count;
+        }
     }
     end_transaction();
     return result;
