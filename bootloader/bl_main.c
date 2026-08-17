@@ -130,17 +130,6 @@ void BootloaderV2_Run(void)
 {
     Board_EarlyInit();
 
-    /* 启动指示灯：bootloader 运行即点亮 PB6(RGB2/WS2812 白)。 */
-    {
-        GPIO_InitTypeDef g;
-        RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
-        g.GPIO_Pin = PIN_RGB2_PIN | PIN_RGB3_PIN;
-        g.GPIO_Mode = GPIO_Mode_Out_PP;
-        g.GPIO_Speed = GPIO_Speed_50MHz;
-        GPIO_Init(PIN_RGB2_PORT, &g);
-        GPIO_SetBits(PIN_RGB2_PORT, PIN_RGB2_PIN);
-    }
-
     /* 关键：从 RCC 寄存器读回实际时钟源，纠正 SystemCoreClock。
      * 若 HSE/PLL 未锁住 72MHz（比如晶振路径有异常），系统实为 HSI 8MHz，
      * 但 SystemCoreClock 编译默认是 72MHz —— 不纠正的话 USART 波特率全错。
@@ -468,9 +457,6 @@ void BootloaderV2_JumpToApp(void)
         GPIO_Init(PIN_ESP_EN_PORT, &gpio);
         GPIO_SetBits(PIN_ESP_EN_PORT, PIN_ESP_EN_PIN);
     }
-
-    /* 熄灭 bootloader 启动指示灯，避免干扰 App 的 RGB 判断 */
-    GPIO_ResetBits(PIN_RGB2_PORT, PIN_RGB2_PIN);
 
     __disable_irq();
     RCC_DeInit();
