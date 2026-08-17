@@ -95,6 +95,12 @@ int main(void)
     Board_Init();
     Watchdog_Init();   /* App 自启看门狗，不依赖 Bootloader */
 
+    /* 初始化屏幕并立即点亮：Bootloader 跳转后 RCC_DeInit 已重置所有外设，
+     * 必须最先初始化 SPI1 + ST7789 + 背光，否则 TFT_FillScreen 等绘图无效 → 黑屏。
+     * 放在传感器初始化之前，避免某个外设 init 卡住/看门狗复位导致永远到不了。 */
+    TFT_Init();
+    UI_ShowBootScreen();
+
     AHT20_Init();
     CS1237_Init();
     RGB_Strip_Init();
@@ -110,12 +116,6 @@ int main(void)
     } else {
         System_LoadParams();
     }
-
-    /* 初始化屏幕：Bootloader 跳转后 RCC_DeInit 已重置所有外设，必须重新初始化
-     * SPI1 + ST7789 + 背光，否则 TFT_FillScreen 等绘图无效 → 黑屏。 */
-    TFT_Init();
-
-    UI_ShowBootScreen();
 
     OtaUpdate_Init();
     EspHttpBridge_Init();
