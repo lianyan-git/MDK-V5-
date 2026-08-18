@@ -57,6 +57,16 @@ static W25Q128_Status_t write_enable(void)
     return command_only(W25_CMD_WRITE_ENABLE);
 }
 
+W25Q128_Status_t W25Q128_WREN(void)
+{
+    return write_enable();
+}
+
+W25Q128_Status_t W25Q128_ReadSR1(uint8_t *sr1)
+{
+    return read_status(sr1);
+}
+
 static W25Q128_Status_t read_status(uint8_t *status)
 {
     uint8_t command = W25_CMD_READ_STATUS;

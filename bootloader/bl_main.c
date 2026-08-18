@@ -327,6 +327,20 @@ void BootloaderV2_EnterUpgradeMode(void)
     BL_TFT_Init();
     BL_TFT_ShowUpgradeScreen();
 
+    /* 诊断：WREN 后读 SR1 */
+    if (flash_ok) {
+        uint8_t sr1_before = 0, sr1_after = 0;
+        char buf[24];
+
+        W25Q128_ReadSR1(&sr1_before);
+        W25Q128_WREN();
+        W25Q128_ReadSR1(&sr1_after);
+
+        sprintf(buf, "B:%02X A:%02X", sr1_before, sr1_after);
+        BL_TFT_ShowStatus(buf);
+        Delay_ms(5000);
+    }
+
     /* 初始化 ESP 串口并上电（P-MOS: 低=开）。OTA 触发放在重试循环内，
      * 失败后重试，避免 ESP 启动慢导致一次就失败。 */
     BL_ESP01S_Init();
