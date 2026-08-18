@@ -235,6 +235,26 @@ void BootloaderV2_Run(void)
     /* 阶段1：无有效 App（首次刷写/测试）→ 下载模式（开 AP 收固件） */
     int app_valid = (BootloaderV2_VerifyApp() == 0);
     if (!app_valid) {
+        /* 诊断：显示 App 向量表状态和 flag 状态，持续 5 秒 */
+        {
+            uint32_t sp = *(__IO uint32_t*)APP_ADDR;
+            uint32_t pc = *(__IO uint32_t*)(APP_ADDR + 4);
+            uint32_t magic = *(__IO uint32_t*)FLAG_SECTOR_ADDR;
+            BL_TFT_Init();
+            BL_TFT_ShowUpgradeScreen();
+            {
+                char dbg[32];
+                sprintf(dbg, "SP=%08lX PC=%08lX", sp, pc);
+                BL_TFT_ShowStatus(dbg);
+            }
+            {
+                char buf[32];
+                sprintf(buf, "FLAG=0x%08lX st=%u", magic, (unsigned int)flag.status);
+                BL_TFT_ShowAPInfo(buf, "", "");
+            }
+            Delay_ms(5000);
+            BL_TFT_ResetUpgradeScreen();
+        }
         BootloaderV2_EnterUpgradeMode();
         /* 下载模式只在刷写成功并复位后才返回（NVIC_SystemReset），
          * 或校验失败重试 3 次后死循环——正常不会走到这里。 */
