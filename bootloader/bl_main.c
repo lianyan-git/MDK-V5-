@@ -230,17 +230,21 @@ void BootloaderV2_Run(void)
         BootloaderV2_EnterCopyMode(&flag);
     }
 
-    /* 阶段1：无有效 App（首次刷写/测试）→ 下载模式（开 AP 收固件） */
-    int app_valid = (BootloaderV2_VerifyApp() == 0);
-    if (!app_valid) {
-        BootloaderV2_EnterUpgradeMode();
-        /* 下载模式只在刷写成功并复位后才返回（NVIC_SystemReset），
-         * 或校验失败重试 3 次后死循环——正常不会走到这里。 */
-        app_valid = (BootloaderV2_VerifyApp() == 0);
-    }
-
-    if (app_valid) {
-        BootloaderV2_JumpToApp();
+    /* 阶段1：上电瞬时时钟可能不稳，重试多次读取向量表，避免误判 App 无效 */
+    {
+        int app_valid = 0;
+        int retry;
+        for (retry = 0; retry < 5; retry++) {
+            if (BootloaderV2_VerifyApp() == 0) { app_valid = 1; break; }
+            Delay_ms(10);
+        }
+        if (!app_valid) {
+            BootloaderV2_EnterUpgradeMode();
+            app_valid = (BootloaderV2_VerifyApp() == 0);
+        }
+        if (app_valid) {
+            BootloaderV2_JumpToApp();
+        }
     }
     BootloaderV2_ShowError();
     for (;;) {
