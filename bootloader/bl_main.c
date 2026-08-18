@@ -219,8 +219,10 @@ void BootloaderV2_Run(void)
         BootloaderV2_EnterUpgradeMode();
     }
 
-    /* 兜底：上电长按编码器（PB5）强制进入下载模式，坏固件也不会变砖。 */
+    /* 兜底：上电长按编码器（PB5）强制进入下载模式，坏固件也不会变砖。
+     * 先清残留 DOWNLOADED 标志，避免下次上电无按键时误进拷贝模式擦 App。 */
     if (EncoderButton_HeldAtBoot()) {
+        UpgradeFlag_Clear();
         BootloaderV2_EnterUpgradeMode();
     }
 
