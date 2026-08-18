@@ -327,14 +327,53 @@ void BootloaderV2_EnterUpgradeMode(void)
     BL_TFT_Init();
     BL_TFT_ShowUpgradeScreen();
 
-    /* 诊断：WREN 后读 SR1 */
+    /* 诊断：直接操作 SPI，绕过驱动层，确认 WREN 是否真正生效 */
     if (flash_ok) {
-        uint8_t sr1_before = 0, sr1_after = 0;
+        uint8_t sr1_before = 0xFF, sr1_after = 0xFF;
         char buf[24];
 
-        W25Q128_ReadSR1(&sr1_before);
-        W25Q128_WREN();
-        W25Q128_ReadSR1(&sr1_after);
+        /* 读 SR1 before */
+        GPIO_ResetBits(GPIOA, GPIO_Pin_15);          /* CS LOW */
+        {   /* send 0x05 */
+            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+            SPI_I2S_SendData(SPI1, 0x05);
+            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+            (void)SPI_I2S_ReceiveData(SPI1);
+        }
+        {   /* read SR1 */
+            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+            SPI_I2S_SendData(SPI1, 0xFF);
+            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+            sr1_before = (uint8_t)SPI_I2S_ReceiveData(SPI1);
+        }
+        GPIO_SetBits(GPIOA, GPIO_Pin_15);            /* CS HIGH */
+
+        /* 发送 WREN (0x06) */
+        GPIO_ResetBits(GPIOA, GPIO_Pin_15);          /* CS LOW */
+        {
+            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+            SPI_I2S_SendData(SPI1, 0x06);
+            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+            (void)SPI_I2S_ReceiveData(SPI1);
+            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY) == SET) {}
+        }
+        GPIO_SetBits(GPIOA, GPIO_Pin_15);            /* CS HIGH */
+
+        /* 读 SR1 after */
+        GPIO_ResetBits(GPIOA, GPIO_Pin_15);          /* CS LOW */
+        {   /* send 0x05 */
+            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+            SPI_I2S_SendData(SPI1, 0x05);
+            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+            (void)SPI_I2S_ReceiveData(SPI1);
+        }
+        {   /* read SR1 */
+            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+            SPI_I2S_SendData(SPI1, 0xFF);
+            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+            sr1_after = (uint8_t)SPI_I2S_ReceiveData(SPI1);
+        }
+        GPIO_SetBits(GPIOA, GPIO_Pin_15);            /* CS HIGH */
 
         sprintf(buf, "B:%02X A:%02X", sr1_before, sr1_after);
         BL_TFT_ShowStatus(buf);
