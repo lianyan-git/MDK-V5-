@@ -24,11 +24,21 @@ static int EncoderButton_HeldAtBoot(void)
     gpio.GPIO_Mode = GPIO_Mode_IPU;   /* 内部上拉，按下为低电平 */
     gpio.GPIO_Speed = GPIO_Speed_2MHz;
     GPIO_Init(PIN_ENC_BTN_PORT, &gpio);
-    uint32_t low = 0U;
-    for (volatile uint32_t i = 0; i < 4000U; i++) {
-        if (GPIO_ReadInputDataBit(PIN_ENC_BTN_PORT, PIN_ENC_BTN_PIN) == 0) low++;
+
+    /* 延时 20ms 让电源和 GPIO 内部上下拉稳定 */
+    Delay_ms(20);
+
+    /* 连续采样 8 次，间隔 1ms，全部低电平才认为真按住 */
+    uint8_t held = 1;
+    uint8_t i;
+    for (i = 0; i < 8; i++) {
+        if (GPIO_ReadInputDataBit(PIN_ENC_BTN_PORT, PIN_ENC_BTN_PIN) != 0) {
+            held = 0;
+            break;
+        }
+        Delay_ms(1);
     }
-    return (low > 2000U) ? 1 : 0;
+    return held;
 }
 
 #ifdef BOOTLOADER_BUILD
