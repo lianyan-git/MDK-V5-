@@ -219,10 +219,8 @@ void BootloaderV2_Run(void)
         BootloaderV2_EnterUpgradeMode();
     }
 
-    /* 兜底：上电长按编码器（PB5）强制进入下载模式，坏固件也不会变砖。
-     * 先清残留 DOWNLOADED 标志，避免下次上电无按键时误进拷贝模式擦 App。 */
+    /* 兜底：上电长按编码器（PB5）强制进入下载模式，坏固件也不会变砖。 */
     if (EncoderButton_HeldAtBoot()) {
-        UpgradeFlag_Clear();
         BootloaderV2_EnterUpgradeMode();
     }
 
@@ -235,13 +233,6 @@ void BootloaderV2_Run(void)
     /* 阶段1：无有效 App（首次刷写/测试）→ 下载模式（开 AP 收固件） */
     int app_valid = (BootloaderV2_VerifyApp() == 0);
     if (!app_valid) {
-        /* 诊断：先死循环，看是否执行到这里 */
-        {
-            volatile uint32_t loop = 1;
-            while (loop) {
-                Watchdog_Kick();
-            }
-        }
         BootloaderV2_EnterUpgradeMode();
         /* 下载模式只在刷写成功并复位后才返回（NVIC_SystemReset），
          * 或校验失败重试 3 次后死循环——正常不会走到这里。 */
