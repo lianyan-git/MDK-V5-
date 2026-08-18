@@ -222,18 +222,14 @@ void BootloaderV2_Run(void)
         BootloaderV2_EnterUpgradeMode();
     }
 
-    /* 兜底：上电长按编码器（PB5）强制进入下载模式，坏固件也不会变砖。 */
-    if (EncoderButton_HeldAtBoot()) {
-        BootloaderV2_EnterUpgradeMode();
-    }
-
     /* 阶段2：检测到 DOWNLOADED → 拷贝模式（刷写 APP，显示进度），不碰 ESP。
      * 下载阶段完成时已写 flag（含 firmware_size/crc），重启后直接刷写。 */
     if (have_flag && flag.status == UPGRADE_STATUS_DOWNLOADED) {
         BootloaderV2_EnterCopyMode(&flag);
     }
 
-    /* 阶段1：上电瞬时时钟可能不稳，重试多次读取向量表，避免误判 App 无效 */
+    /* 先验证 App 有效性（重试 5 次，避免上电时钟不稳误判），
+     * 再检查编码器（避免编码器 GPIO 初始化影响 Flash 读取）。 */
     {
         int app_valid = 0;
         int retry;
@@ -241,13 +237,14 @@ void BootloaderV2_Run(void)
             if (BootloaderV2_VerifyApp() == 0) { app_valid = 1; break; }
             Delay_ms(10);
         }
-        if (!app_valid) {
-            BootloaderV2_EnterUpgradeMode();
-            app_valid = (BootloaderV2_VerifyApp() == 0);
-        }
         if (app_valid) {
             BootloaderV2_JumpToApp();
         }
+    }
+
+    /* 兜底：上电长按编码器（PB5）强制进入下载模式，坏固件也不会变砖。 */
+    if (EncoderButton_HeldAtBoot()) {
+        BootloaderV2_EnterUpgradeMode();
     }
     BootloaderV2_ShowError();
     for (;;) {
