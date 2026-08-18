@@ -327,57 +327,184 @@ void BootloaderV2_EnterUpgradeMode(void)
     BL_TFT_Init();
     BL_TFT_ShowUpgradeScreen();
 
-    /* 诊断：直接操作 SPI，绕过驱动层，确认 WREN 是否真正生效 */
+    /* 诊断：直接操作 SPI，完整 WREN→擦除→写入→回读 测试 */
     if (flash_ok) {
-        uint8_t sr1_before = 0xFF, sr1_after = 0xFF;
+        uint8_t sr1 = 0xFF;
         char buf[24];
+        uint8_t i;
+        uint8_t rd[16];
 
-        /* 读 SR1 before */
-        GPIO_ResetBits(GPIOA, GPIO_Pin_15);          /* CS LOW */
-        {   /* send 0x05 */
-            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-            SPI_I2S_SendData(SPI1, 0x05);
-            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-            (void)SPI_I2S_ReceiveData(SPI1);
-        }
-        {   /* read SR1 */
-            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-            SPI_I2S_SendData(SPI1, 0xFF);
-            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-            sr1_before = (uint8_t)SPI_I2S_ReceiveData(SPI1);
-        }
-        GPIO_SetBits(GPIOA, GPIO_Pin_15);            /* CS HIGH */
+        /* ── 测试1：WREN ── */
+        GPIO_ResetBits(GPIOA, GPIO_Pin_15);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+        SPI_I2S_SendData(SPI1, 0x06);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+        (void)SPI_I2S_ReceiveData(SPI1);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY) == SET) {}
+        GPIO_SetBits(GPIOA, GPIO_Pin_15);
 
-        /* 发送 WREN (0x06) */
-        GPIO_ResetBits(GPIOA, GPIO_Pin_15);          /* CS LOW */
-        {
-            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-            SPI_I2S_SendData(SPI1, 0x06);
-            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-            (void)SPI_I2S_ReceiveData(SPI1);
-            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY) == SET) {}
-        }
-        GPIO_SetBits(GPIOA, GPIO_Pin_15);            /* CS HIGH */
+        /* 读 SR1 确认 WEL=1 */
+        GPIO_ResetBits(GPIOA, GPIO_Pin_15);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+        SPI_I2S_SendData(SPI1, 0x05);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+        (void)SPI_I2S_ReceiveData(SPI1);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+        SPI_I2S_SendData(SPI1, 0xFF);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+        sr1 = (uint8_t)SPI_I2S_ReceiveData(SPI1);
+        GPIO_SetBits(GPIOA, GPIO_Pin_15);
 
-        /* 读 SR1 after */
-        GPIO_ResetBits(GPIOA, GPIO_Pin_15);          /* CS LOW */
-        {   /* send 0x05 */
-            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-            SPI_I2S_SendData(SPI1, 0x05);
-            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-            (void)SPI_I2S_ReceiveData(SPI1);
-        }
-        {   /* read SR1 */
-            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-            SPI_I2S_SendData(SPI1, 0xFF);
-            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-            sr1_after = (uint8_t)SPI_I2S_ReceiveData(SPI1);
-        }
-        GPIO_SetBits(GPIOA, GPIO_Pin_15);            /* CS HIGH */
-
-        sprintf(buf, "B:%02X A:%02X", sr1_before, sr1_after);
+        sprintf(buf, "1.WREN SR1=%02X", sr1);
         BL_TFT_ShowStatus(buf);
-        Delay_ms(5000);
+        Delay_ms(3000);
+
+        /* ── 测试2：Sector Erase 0x000000 ── */
+        /* WREN */
+        GPIO_ResetBits(GPIOA, GPIO_Pin_15);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+        SPI_I2S_SendData(SPI1, 0x06);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+        (void)SPI_I2S_ReceiveData(SPI1);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY) == SET) {}
+        GPIO_SetBits(GPIOA, GPIO_Pin_15);
+
+        /* Sector Erase 0x20 + addr 0x000000 */
+        GPIO_ResetBits(GPIOA, GPIO_Pin_15);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+        SPI_I2S_SendData(SPI1, 0x20);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+        (void)SPI_I2S_ReceiveData(SPI1);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+        SPI_I2S_SendData(SPI1, 0x00);  /* addr[23:16] */
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+        (void)SPI_I2S_ReceiveData(SPI1);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+        SPI_I2S_SendData(SPI1, 0x00);  /* addr[15:8] */
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+        (void)SPI_I2S_ReceiveData(SPI1);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+        SPI_I2S_SendData(SPI1, 0x00);  /* addr[7:0] */
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+        (void)SPI_I2S_ReceiveData(SPI1);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY) == SET) {}
+        GPIO_SetBits(GPIOA, GPIO_Pin_15);
+
+        /* 等待 WIP=0 */
+        {
+            uint32_t timeout = 4000;
+            uint8_t busy = 1;
+            while (timeout-- > 0) {
+                GPIO_ResetBits(GPIOA, GPIO_Pin_15);
+                while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+                SPI_I2S_SendData(SPI1, 0x05);
+                while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+                (void)SPI_I2S_ReceiveData(SPI1);
+                while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+                SPI_I2S_SendData(SPI1, 0xFF);
+                while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+                sr1 = (uint8_t)SPI_I2S_ReceiveData(SPI1);
+                GPIO_SetBits(GPIOA, GPIO_Pin_15);
+                if ((sr1 & 0x01) == 0) { busy = 0; break; }
+                Delay_ms(1);
+            }
+            sprintf(buf, "2.ERASE %s SR=%02X", busy ? "TMO" : "OK", sr1);
+            BL_TFT_ShowStatus(buf);
+            Delay_ms(3000);
+        }
+
+        /* ── 测试3：Page Program 16 字节到 0x000000 ── */
+        /* WREN */
+        GPIO_ResetBits(GPIOA, GPIO_Pin_15);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+        SPI_I2S_SendData(SPI1, 0x06);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+        (void)SPI_I2S_ReceiveData(SPI1);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY) == SET) {}
+        GPIO_SetBits(GPIOA, GPIO_Pin_15);
+
+        /* Page Program 0x02 + addr 0x000000 + 16 bytes */
+        GPIO_ResetBits(GPIOA, GPIO_Pin_15);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+        SPI_I2S_SendData(SPI1, 0x02);  /* PP */
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+        (void)SPI_I2S_ReceiveData(SPI1);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+        SPI_I2S_SendData(SPI1, 0x00);  /* addr[23:16] */
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+        (void)SPI_I2S_ReceiveData(SPI1);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+        SPI_I2S_SendData(SPI1, 0x00);  /* addr[15:8] */
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+        (void)SPI_I2S_ReceiveData(SPI1);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+        SPI_I2S_SendData(SPI1, 0x00);  /* addr[7:0] */
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+        (void)SPI_I2S_ReceiveData(SPI1);
+        /* 16 bytes data: 0xAA,0x55,0xAA,0x55,... */
+        for (i = 0; i < 16; i++) {
+            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+            SPI_I2S_SendData(SPI1, (i & 1) ? 0x55 : 0xAA);
+            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+            (void)SPI_I2S_ReceiveData(SPI1);
+        }
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY) == SET) {}
+        GPIO_SetBits(GPIOA, GPIO_Pin_15);
+
+        /* 等待 WIP=0 */
+        {
+            uint32_t timeout = 100;
+            while (timeout-- > 0) {
+                GPIO_ResetBits(GPIOA, GPIO_Pin_15);
+                while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+                SPI_I2S_SendData(SPI1, 0x05);
+                while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+                (void)SPI_I2S_ReceiveData(SPI1);
+                while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+                SPI_I2S_SendData(SPI1, 0xFF);
+                while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+                sr1 = (uint8_t)SPI_I2S_ReceiveData(SPI1);
+                GPIO_SetBits(GPIOA, GPIO_Pin_15);
+                if ((sr1 & 0x01) == 0) break;
+                Delay_ms(1);
+            }
+        }
+
+        /* 读取回 16 字节 */
+        GPIO_ResetBits(GPIOA, GPIO_Pin_15);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+        SPI_I2S_SendData(SPI1, 0x03);  /* Read Data */
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+        (void)SPI_I2S_ReceiveData(SPI1);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+        SPI_I2S_SendData(SPI1, 0x00);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+        (void)SPI_I2S_ReceiveData(SPI1);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+        SPI_I2S_SendData(SPI1, 0x00);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+        (void)SPI_I2S_ReceiveData(SPI1);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+        SPI_I2S_SendData(SPI1, 0x00);
+        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+        (void)SPI_I2S_ReceiveData(SPI1);
+        for (i = 0; i < 16; i++) {
+            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
+            SPI_I2S_SendData(SPI1, 0xFF);
+            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
+            rd[i] = (uint8_t)SPI_I2S_ReceiveData(SPI1);
+        }
+        GPIO_SetBits(GPIOA, GPIO_Pin_15);
+
+        sprintf(buf, "3.WR B0=%02X B1=%02X", rd[0], rd[1]);
+        BL_TFT_ShowStatus(buf);
+        Delay_ms(3000);
+        sprintf(buf, "  B2=%02X B3=%02X", rd[2], rd[3]);
+        BL_TFT_ShowStatus(buf);
+        Delay_ms(3000);
+        sprintf(buf, "OK=%s", (rd[0]==0xAA && rd[1]==0x55) ? "YES" : "NO");
+        BL_TFT_ShowStatus(buf);
+        Delay_ms(3000);
     }
 
     /* 初始化 ESP 串口并上电（P-MOS: 低=开）。OTA 触发放在重试循环内，
