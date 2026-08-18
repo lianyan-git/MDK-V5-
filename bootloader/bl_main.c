@@ -209,6 +209,9 @@ void BootloaderV2_Run(void)
     SystemTime_Init();
     Watchdog_Init();   /* 约 4 秒窗口 */
 
+    /* 上电初 HSE/PLL 可能未完全稳定，延时 200ms 让时钟稳定后再读 Flash */
+    Delay_ms(200);
+
     UpgradeFlag_t flag;
     int have_flag = (UpgradeFlag_Read(&flag) == 0);
 
