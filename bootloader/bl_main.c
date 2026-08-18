@@ -20,7 +20,6 @@ static void Delay_ms(uint16_t ms);
 static int EncoderButton_HeldAtBoot(void)
 {
     GPIO_InitTypeDef gpio;
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
     gpio.GPIO_Pin  = PIN_ENC_BTN_PIN;
     gpio.GPIO_Mode = GPIO_Mode_IPU;   /* 内部上拉，按下为低电平 */
     gpio.GPIO_Speed = GPIO_Speed_2MHz;
@@ -228,8 +227,12 @@ void BootloaderV2_Run(void)
         BootloaderV2_EnterCopyMode(&flag);
     }
 
-    /* 先验证 App 有效性（重试 5 次，避免上电时钟不稳误判），
-     * 再检查编码器（避免编码器 GPIO 初始化影响 Flash 读取）。 */
+    /* 兜底：上电长按编码器（PB5）强制进入下载模式，坏固件也不会变砖。 */
+    if (EncoderButton_HeldAtBoot()) {
+        BootloaderV2_EnterUpgradeMode();
+    }
+
+    /* 验证 App 有效性（重试 5 次，避免上电时钟不稳误判） */
     {
         int app_valid = 0;
         int retry;
@@ -240,11 +243,6 @@ void BootloaderV2_Run(void)
         if (app_valid) {
             BootloaderV2_JumpToApp();
         }
-    }
-
-    /* 兜底：上电长按编码器（PB5）强制进入下载模式，坏固件也不会变砖。 */
-    if (EncoderButton_HeldAtBoot()) {
-        BootloaderV2_EnterUpgradeMode();
     }
     BootloaderV2_ShowError();
     for (;;) {

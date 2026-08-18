@@ -13,7 +13,7 @@ void Board_EarlyInit(void)
 {
     GPIO_InitTypeDef gpio;
 
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO | RCC_APB2Periph_GPIOA, ENABLE);
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO | RCC_APB2Periph_GPIOA | RCC_APB2Periph_GPIOB, ENABLE);
 
     /* Set the output latch low before PA8 changes from reset input to output. */
     Board_ForceHeaterOff();
