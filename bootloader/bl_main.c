@@ -197,19 +197,10 @@ static int flash_staged_to_app(void)
 
 void BootloaderV2_Run(void)
 {
-    Board_EarlyInit();
-
-    /* 关键：从 RCC 寄存器读回实际时钟源，纠正 SystemCoreClock。
-     * 若 HSE/PLL 未锁住 72MHz（比如晶振路径有异常），系统实为 HSI 8MHz，
-     * 但 SystemCoreClock 编译默认是 72MHz —— 不纠正的话 USART 波特率全错。
-     * 必须在 SystemTime_Init / EspUart_Init 之前调用。 */
     SystemCoreClockUpdate();
 
     SystemTime_Init();
     Watchdog_Init();   /* 约 4 秒窗口 */
-
-    /* 上电初 HSE/PLL 可能未完全稳定，延时 200ms 让时钟稳定后再读 Flash */
-    Delay_ms(200);
 
     UpgradeFlag_t flag;
     int have_flag = (UpgradeFlag_Read(&flag) == 0);
@@ -226,6 +217,9 @@ void BootloaderV2_Run(void)
     if (have_flag && flag.status == UPGRADE_STATUS_DOWNLOADED) {
         BootloaderV2_EnterCopyMode(&flag);
     }
+
+    /* 板级初始化（GPIO、JTAG 等），放在 App 验证之后避免影响 Flash 读取 */
+    Board_EarlyInit();
 
     /* 兜底：上电长按编码器（PB5）强制进入下载模式，坏固件也不会变砖。 */
     if (EncoderButton_HeldAtBoot()) {
