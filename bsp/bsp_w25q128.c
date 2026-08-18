@@ -57,16 +57,6 @@ static W25Q128_Status_t write_enable(void)
     return command_only(W25_CMD_WRITE_ENABLE);
 }
 
-W25Q128_Status_t W25Q128_WREN(void)
-{
-    return write_enable();
-}
-
-W25Q128_Status_t W25Q128_ReadSR1(uint8_t *sr1)
-{
-    return read_status(sr1);
-}
-
 static W25Q128_Status_t read_status(uint8_t *status)
 {
     uint8_t command = W25_CMD_READ_STATUS;
@@ -81,6 +71,16 @@ static W25Q128_Status_t read_status(uint8_t *status)
     }
     Spi1Bus_Deselect(SPI1_BUS_OWNER_W25Q128);
     return map_bus_status(bus_status);
+}
+
+W25Q128_Status_t W25Q128_WREN(void)
+{
+    return write_enable();
+}
+
+W25Q128_Status_t W25Q128_ReadSR1(uint8_t *sr1)
+{
+    return read_status(sr1);
 }
 
 static W25Q128_Status_t wait_ready(uint32_t timeout_ms)
