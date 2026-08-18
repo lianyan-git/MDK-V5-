@@ -9,6 +9,7 @@
 #define W25_CMD_PAGE_PROGRAM  UINT8_C(0x02)
 #define W25_CMD_SECTOR_ERASE  UINT8_C(0x20)
 #define W25_CMD_READ_JEDEC_ID UINT8_C(0x9F)
+#define W25_CMD_WRITE_STATUS  UINT8_C(0x01)
 
 #define W25_SPI_TIMEOUT_MS     10U
 #define W25_PROGRAM_TIMEOUT_MS 50U
@@ -234,6 +235,35 @@ W25Q128_Status_t W25Q128_EraseSector(uint32_t address)
     }
     if (result == W25Q128_OK) {
         result = wait_ready(W25_ERASE_TIMEOUT_MS);
+    }
+    Spi1Bus_Release(SPI1_BUS_OWNER_W25Q128);
+    return result;
+}
+
+W25Q128_Status_t W25Q128_ClearProtection(void)
+{
+    W25Q128_Status_t result;
+    Spi1BusStatus_t bus_status;
+    uint8_t cmd = W25_CMD_WRITE_STATUS;
+    uint8_t data[2] = { 0x00, 0x00 };
+
+    if (Spi1Bus_Acquire(SPI1_BUS_OWNER_W25Q128, 0U) != SPI1_BUS_OK) {
+        return W25Q128_ERROR_BUS;
+    }
+    result = write_enable();
+    if (result == W25Q128_OK) {
+        bus_status = Spi1Bus_Select(SPI1_BUS_OWNER_W25Q128);
+        if (bus_status == SPI1_BUS_OK) {
+            bus_status = transfer(&cmd, 0, 1U);
+        }
+        if (bus_status == SPI1_BUS_OK) {
+            bus_status = transfer(data, 0, sizeof(data));
+        }
+        Spi1Bus_Deselect(SPI1_BUS_OWNER_W25Q128);
+        result = map_bus_status(bus_status);
+    }
+    if (result == W25Q128_OK) {
+        result = wait_ready(W25_PROGRAM_TIMEOUT_MS);
     }
     Spi1Bus_Release(SPI1_BUS_OWNER_W25Q128);
     return result;

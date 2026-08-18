@@ -15,6 +15,23 @@
 
 static void Delay_ms(uint16_t ms);
 
+/* 上电兜底：长按编码器按键（PB5，按下为低电平）直接进入下载模式，
+ * 无论 App 是否有效都生效，避免 OTA 写入坏固件后“变砖”无法再进升级界面。 */
+static int EncoderButton_HeldAtBoot(void)
+{
+    GPIO_InitTypeDef gpio;
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
+    gpio.GPIO_Pin  = PIN_ENC_BTN_PIN;
+    gpio.GPIO_Mode = GPIO_Mode_IPU;   /* 内部上拉，按下为低电平 */
+    gpio.GPIO_Speed = GPIO_Speed_2MHz;
+    GPIO_Init(PIN_ENC_BTN_PORT, &gpio);
+    uint32_t low = 0U;
+    for (volatile uint32_t i = 0; i < 4000U; i++) {
+        if (GPIO_ReadInputDataBit(PIN_ENC_BTN_PORT, PIN_ENC_BTN_PIN) == 0) low++;
+    }
+    return (low > 2000U) ? 1 : 0;
+}
+
 #ifdef BOOTLOADER_BUILD
 int main(void)
 {
@@ -30,6 +47,32 @@ int main(void)
 static uint32_t fw_total = 0;
 static uint32_t fw_crc = 0;
 static uint32_t fw_start = 0;   /* 固件在外部 Flash 中的偏移（搜索向量表定位） */
+
+/* 校验失败诊断：记录计算 CRC / 期望 CRC / 覆盖长度，便于定位写坏还是读坏 */
+static uint32_t g_dbg_crc_calc = 0;
+static uint32_t g_dbg_crc_exp  = 0;
+static uint32_t g_dbg_crc_len  = 0;
+
+/* 重算暂存镜像 [0, len) 的 CRC32（与 verify 同算法），用于二次读取比对读稳定性 */
+static uint32_t staged_crc_recompute(uint32_t len)
+{
+    uint8_t buf[FLASH_CHUNK];
+    uint32_t crc = 0xFFFFFFFFU;
+    uint32_t rd = 0U;
+    uint32_t rem = len;
+    while (rem > 0U) {
+        uint32_t rl = (rem > sizeof(buf)) ? sizeof(buf) : rem;
+        Watchdog_Kick();
+        if (W25Q128_Read(FIRMWARE_TEMP_ADDR + rd, buf, rl) != W25Q128_OK) return 0U;
+        for (uint32_t i = 0; i < rl; i++) {
+            crc ^= buf[i];
+            for (uint8_t j = 0; j < 8; j++)
+                crc = (crc >> 1) ^ (0xEDB88320U & -(crc & 1));
+        }
+        rd += rl; rem -= rl;
+    }
+    return ~crc;
+}
 
 static int erase_app_area_with_progress(void)
 {
@@ -54,6 +97,7 @@ static int erase_app_area_with_progress(void)
 static int stage_erase(void)
 {
     BL_TFT_ShowStatus("ERASE...");
+    W25Q128_ClearProtection();   /* 清除状态寄存器 BP 写保护位，避免页编程被硬件忽略 */
     if (W25Q128_EraseRange(FIRMWARE_TEMP_ADDR, PLATFORM_FIRMWARE_ERASE_SIZE) != W25Q128_OK) {
         BL_TFT_ShowStatus("ERASE FAIL");
         return -1;
@@ -67,12 +111,12 @@ static int verify_staged_image(void)
     uint8_t buf[FLASH_CHUNK];
     uint32_t offset = 0U;
     int found = 0;
+    uint32_t orig_total = fw_total;   /* 握手/整包原始大小，CRC 覆盖 [0, orig_total) */
 
-    /* 在外部 Flash 中搜索固件向量表（SP=0x2000xxxx + PC=0x0800xxxx）定位固件开头。
-     * 用户要求不校验大小/CRC，只要引导到指定地址。 */
+    /* 先在外部 Flash 中搜索固件向量表（SP=0x2000xxxx + PC=0x0800xxxx）定位固件开头。 */
     fw_start = 0;
-    while (offset + 8 <= fw_total) {
-        uint32_t read_len = offset + FLASH_CHUNK <= fw_total ? FLASH_CHUNK : (fw_total - offset);
+    while (offset + 8 <= orig_total) {
+        uint32_t read_len = offset + FLASH_CHUNK <= orig_total ? FLASH_CHUNK : (orig_total - offset);
         if (read_len > sizeof(buf)) read_len = sizeof(buf);
         Watchdog_Kick();
         if (W25Q128_Read(FIRMWARE_TEMP_ADDR + offset, buf, read_len) != W25Q128_OK) return -1;
@@ -91,10 +135,36 @@ static int verify_staged_image(void)
     }
     if (!found) return -1;   /* 没找到向量表：固件开头丢失 */
 
-    /* 固件大小 = 固件开头到数据末尾（含尾部元数据，不影响引导）。
-     * 限制不超过 APP 分区大小。 */
-    fw_total = fw_total - fw_start;
+    fw_total = orig_total - fw_start;
     if (fw_total > APP_SIZE) fw_total = APP_SIZE;
+
+    /* 整包 CRC32 校验：重算 [0, orig_total) 的 CRC32，与 ESP 上报的 fw_crc 比对。
+     * UART 段已有 CRC16+ACK、存储写出错会返回错误，二者都不会静默损坏；
+     * 只有 WiFi 上传或存储落地环节可能污染体部而保留向量表，这里能拦住，
+     * 避免“下载成功、校验通过”却被拷成坏固件导致跳转黑屏。 */
+    {
+        uint32_t crc = 0xFFFFFFFFU;
+        uint32_t rd = 0U;
+        uint32_t rem = orig_total;
+        while (rem > 0U) {
+            uint32_t rl = (rem > sizeof(buf)) ? sizeof(buf) : rem;
+            Watchdog_Kick();
+            if (W25Q128_Read(FIRMWARE_TEMP_ADDR + rd, buf, rl) != W25Q128_OK) return -1;
+            for (uint32_t i = 0; i < rl; i++) {
+                crc ^= buf[i];
+                for (uint8_t j = 0; j < 8; j++)
+                    crc = (crc >> 1) ^ (0xEDB88320U & -(crc & 1));
+            }
+            rd += rl;
+            rem -= rl;
+        }
+        if ((~crc) != fw_crc) {
+            g_dbg_crc_calc = ~crc;      /* 计算值 */
+            g_dbg_crc_exp  = fw_crc;    /* ESP 上报期望值 */
+            g_dbg_crc_len  = orig_total;
+            return -1;   /* CRC 不匹配：固件在传输/存储中损坏，拒绝引导 */
+        }
+    }
     return 0;
 }
 
@@ -146,6 +216,11 @@ void BootloaderV2_Run(void)
      * 复位后直接开 AP 收固件（覆盖所有其它判定）。 */
     if (have_flag && flag.status == UPGRADE_STATUS_FORCE_BOOT) {
         UpgradeFlag_Clear();
+        BootloaderV2_EnterUpgradeMode();
+    }
+
+    /* 兜底：上电长按编码器（PB5）强制进入下载模式，坏固件也不会变砖。 */
+    if (EncoderButton_HeldAtBoot()) {
         BootloaderV2_EnterUpgradeMode();
     }
 
@@ -246,16 +321,10 @@ void BootloaderV2_EnterUpgradeMode(void)
     BL_TFT_Init();
     BL_TFT_ShowUpgradeScreen();
 
-    /* ── 开 AP：等 AT OK → CWMODE/CWSAP/CIPSERVER ────────── */
+    /* 初始化 ESP 串口并上电（P-MOS: 低=开）。OTA 触发放在重试循环内，
+     * 失败后重试，避免 ESP 启动慢导致一次就失败。 */
     BL_ESP01S_Init();
     EspUart_SetEnabled(1);   /* P-MOS: 低=开，确保 ESP01S 供电 */
-    BL_ESP01S_StartAP();
-
-    {
-        const char *ip = BL_ESP01S_GetIP();
-        BL_TFT_ShowAPInfo("QiMingXing", "12345678", ip);
-    }
-    BL_TFT_ShowStatus("DOWNLOAD TO QFLASH");
 
     for (retry = 0; retry < MAX_RETRY; retry++) {
         fw_total = 0;
@@ -267,6 +336,20 @@ void BootloaderV2_EnterUpgradeMode(void)
 
         BL_ESP01S_ResetTransfer();
         BL_TFT_ShowStatus("WAIT");
+
+        /* 通知 ESP 进入 OTA 模式（自定义固件开 AP + 网页，并回 OK），
+         * 之后 BL_ESP01S_Process 按二进制 OTA 协议接收固件：
+         * 握手 -> 1KB/包(带 CRC16 包级 ACK) -> 总 CRC32 -> 完成。 */
+        if (BL_ESP01S_StartOta() != 0) {
+            BL_TFT_ShowError("ESP No AT");
+            Delay_ms(2000);
+            continue;
+        }
+        {
+            const char *ip = BL_ESP01S_GetIP();
+            BL_TFT_ShowAPInfo("QiMingXing", "12345678", ip);
+        }
+        BL_TFT_ShowStatus("DOWNLOAD TO QFLASH");
 
         uint32_t last_watchdog = SystemTime_Millis();
         uint32_t last_progress_tick = 0;
@@ -366,26 +449,39 @@ void BootloaderV2_EnterUpgradeMode(void)
             UpgradeFlag_Write(&uf);
             UpgradeFlag_WriteExt(&uf);
 
+            /* 固件已收完：由单片机主动让 ESP 进入休眠（AT+OTACLOSE），
+             * 关闭网页/AP 进入低功耗，而不是让 ESP 自己决定。失败也无害，
+             * 拷贝阶段会硬断电 ESP。 */
+            BL_ESP01S_CloseWeb();
+
             BL_TFT_ShowStatus("Restarting...");
             Delay_ms(2000);
             NVIC_SystemReset();
             return;
         } else {
-            /* 校验失败：显示关键数值便于定位 */
-            uint8_t v0[8];
-            char buf[48];
-            uint32_t sp;
+            /* 校验失败诊断：重算 CRC 两次比对读稳定性；EXP=期望 GOT=计算值。
+             * 若两次重算不同 → 读不稳定（SPI 读路径问题）；
+             * 若相同但与 EXP 不同 → 确为写坏（或存储落地损坏）。 */
+            uint32_t crcA = g_dbg_crc_calc;
+            uint32_t crcB = staged_crc_recompute(g_dbg_crc_len);
             uint32_t clen = BL_ESP01S_GetTotalFirmwareSize();
             uint32_t got  = BL_ESP01S_GetReceivedSize();
-            if (W25Q128_Read(FIRMWARE_TEMP_ADDR, v0, 8U) == W25Q128_OK) {
-                sp = (uint32_t)v0[0] | ((uint32_t)v0[1] << 8) | ((uint32_t)v0[2] << 16) | ((uint32_t)v0[3] << 24);
-                sprintf(buf, "CL%lu GOT%lu SP%08X", clen, got, sp);
+            char buf[32];
+            if (crcA != crcB) {
+                sprintf(buf, "RD UNSTABLE");
+                BL_TFT_ShowStatus(buf);
             } else {
-                sprintf(buf, "CL%lu GOT%lu RDERR", clen, got);
+                sprintf(buf, "EXP%08X", (unsigned int)g_dbg_crc_exp);
+                BL_TFT_ShowStatus(buf);
             }
-            BL_TFT_ShowStatus(buf);
-            Delay_ms(5000);
-            BL_TFT_ShowError("Verify Failed!");
+            Delay_ms(2500);
+            if (crcA != crcB) {
+                BL_TFT_ShowError("Verify Failed!");
+            } else {
+                sprintf(buf, "GOT%08X L%lu", (unsigned int)crcA, (unsigned long)clen);
+                BL_TFT_ShowError(buf);
+            }
+            Delay_ms(3500);
             if (retry < MAX_RETRY - 1) {
                 BL_TFT_ShowStatus("Retrying...");
                 Delay_ms(1500);

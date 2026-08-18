@@ -24,6 +24,7 @@ W25Q128_Status_t W25Q128_Read(uint32_t address, uint8_t *buffer, uint32_t length
 W25Q128_Status_t W25Q128_Write(uint32_t address, const uint8_t *buffer, uint32_t length);
 W25Q128_Status_t W25Q128_EraseSector(uint32_t address);
 W25Q128_Status_t W25Q128_EraseRange(uint32_t address, uint32_t length);
+W25Q128_Status_t W25Q128_ClearProtection(void);
 void W25Q128_SetServiceCallback(W25Q128_ServiceFn service);
 
 #endif /* BSP_W25Q128_H */

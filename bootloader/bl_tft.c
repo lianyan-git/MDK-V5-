@@ -124,6 +124,7 @@ void BL_TFT_Init(void) {
 
     // 清屏
     BL_TFT_Clear(COLOR_BLACK);
+    BL_TFT_ResetUpgradeScreen();   /* 复位“已绘制”标志，使本会话首次进入升级界面时整屏绘制一次 */
 }
 
 /*═════════════════════════════════════════════════════════════════════════════
@@ -277,14 +278,6 @@ void BL_TFT_DrawString(uint16_t x, uint16_t y, const char *str, uint16_t color, 
  *  界面显示
  *═════════════════════════════════════════════════════════════════════════════*/
 
-void BL_TFT_ShowBootLogo(void) {
-    BL_TFT_Clear(COLOR_BLACK);
-    BL_TFT_FillRect(30, 80, 75, 20, COLOR_GREEN);
-    BL_TFT_FillRect(30, 110, 75, 20, COLOR_BLUE);
-    BL_TFT_FillRect(30, 140, 75, 20, COLOR_RED);
-    Delay_ms(500);
-}
-
 /* 在屏幕水平居中绘制文字 */
 static void tft_draw_center(uint16_t y, const char *str, uint16_t color, uint8_t size)
 {
@@ -296,17 +289,21 @@ static void tft_draw_center(uint16_t y, const char *str, uint16_t color, uint8_t
     BL_TFT_DrawString((uint16_t)x, y, str, color, size);
 }
 
-void BL_TFT_DrawCentered(uint16_t y, const char *str, uint16_t color, uint8_t size)
+/* 升级界面是否已整屏绘制：仅首次进入时绘制一次，之后只局部刷新进度/状态，
+ * 避免每次进入都整屏清屏造成的闪烁。由 BL_TFT_ResetUpgradeScreen() 重置。 */
+static uint8_t g_upgrade_drawn = 0;
+
+void BL_TFT_ResetUpgradeScreen(void)
 {
-    tft_draw_center(y, str, color, size);
+    g_upgrade_drawn = 0;
 }
 
 void BL_TFT_ShowUpgradeScreen(void) {
-    static uint8_t drawn = 0;
-    if (drawn) return;   /* 已绘制过：不整屏重画，避免刷新闪烁 */
-    drawn = 1;
+    if (g_upgrade_drawn) return;   /* 已绘制过：直接跳过，不整屏重画 */
+    g_upgrade_drawn = 1;
 
-    BL_TFT_Clear(COLOR_BLACK);
+    /* 不再整屏清屏：BL_TFT_Init 进入时已整屏清黑，此处直接叠加绘制升级界面，
+     * 消除二次全屏刷新造成的闪烁；后续仅局部刷新进度条/状态文字区域。 */
 
     /* 横屏 240x135 布局 */
     // 标题栏：分段彩色大字 "lianyan & -E-"（size=2，整体水平居中，垂直居中 y=8）
@@ -380,13 +377,8 @@ void BL_TFT_ShowProgressBar(uint8_t percent) {
     BL_TFT_FillRect(11, 76, bar_width, 18, COLOR_GREEN);
 }
 
-void BL_TFT_ShowProgressText(const char *text) {
-    BL_TFT_FillRect(0, 95, TFT_WIDTH, 20, COLOR_BLACK);   /* 全宽清除 */
-    tft_draw_center(97, text, COLOR_WHITE, 2);   /* 大字提示 */
-}
-
 void BL_TFT_ShowError(const char *text) {
-    BL_TFT_Clear(COLOR_BLACK);
+    /* 仅绘制错误条带（局部刷新），不清整屏，避免闪烁 */
     BL_TFT_FillRect(0, 100, TFT_WIDTH, 40, COLOR_ERR_BG);
     tft_draw_center(112, text, COLOR_WHITE, 2);
 }

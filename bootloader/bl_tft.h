@@ -27,11 +27,11 @@
 // 初始化
 void BL_TFT_Init(void);
 
-// 显示启动Logo
-void BL_TFT_ShowBootLogo(void);
-
 // 显示升级界面
 void BL_TFT_ShowUpgradeScreen(void);
+
+// 复位升级界面“已绘制”标志，使下次进入时整屏绘制一次（之后仍只局部刷新）
+void BL_TFT_ResetUpgradeScreen(void);
 
 // 显示状态文本
 void BL_TFT_ShowStatus(const char *text);
@@ -41,9 +41,6 @@ void BL_TFT_ShowAPInfo(const char *ssid, const char *pass, const char *ip);
 
 // 显示进度条
 void BL_TFT_ShowProgressBar(uint8_t percent);
-
-// 显示进度文本
-void BL_TFT_ShowProgressText(const char *text);
 
 // 显示错误
 void BL_TFT_ShowError(const char *text);
@@ -59,8 +56,5 @@ void BL_TFT_DrawChar(uint16_t x, uint16_t y, char c, uint16_t color, uint8_t siz
 
 // 填充矩形
 void BL_TFT_FillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color);
-
-// 水平居中绘制文字
-void BL_TFT_DrawCentered(uint16_t y, const char *str, uint16_t color, uint8_t size);
 
 #endif /* __BL_TFT_H */

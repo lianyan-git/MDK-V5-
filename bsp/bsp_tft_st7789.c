@@ -306,6 +306,37 @@ TftStatus_t TFT_FillScreen(uint16_t color)
     return TFT_FillRect(0U, 0U, TFT_WIDTH, TFT_HEIGHT, color);
 }
 
+TftStatus_t TFT_DrawBitmap(uint16_t x, uint16_t y,
+                           uint16_t width, uint16_t height,
+                           const uint16_t *bitmap,
+                           uint16_t transparent, uint16_t background)
+{
+    static uint8_t row_buf[TFT_WIDTH * 2U];
+    TftStatus_t result;
+    uint16_t px;
+    uint32_t row_i, col;
+
+    if (bitmap == 0) return TFT_ERROR_ARGUMENT;
+    if (!TFT_ClipRect(&x, &y, &width, &height)) return TFT_ERROR_ARGUMENT;
+
+    result = begin_transaction();
+    if (result != TFT_OK) return result;
+    result = set_window(x, y, width, height);
+
+    for (row_i = 0U; (result == TFT_OK) && (row_i < height); ++row_i) {
+        for (col = 0U; col < width; ++col) {
+            px = bitmap[row_i * width + col];
+            px = (px == transparent) ? background : px;
+            /* RGB565 高字节在前，显式拆字节避免小端序反了 */
+            row_buf[col * 2U] = (uint8_t)(px >> 8);
+            row_buf[col * 2U + 1U] = (uint8_t)px;
+        }
+        result = write_part_dma(row_buf, width * 2U);
+    }
+    end_transaction();
+    return result;
+}
+
 TftStatus_t TFT_DrawPixel(uint16_t x, uint16_t y, uint16_t color)
 {
     return TFT_FillRect(x, y, 1U, 1U, color);

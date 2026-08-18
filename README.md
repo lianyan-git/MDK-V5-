@@ -110,7 +110,7 @@ W25Q128 外部 Flash 共 16 MiB，用于固件暂存和参数存储：
 | 文件 | 作用 |
 |---|---|
 | `bootloader/bl_main.c` | Bootloader 主流程：开机判定、升级模式、跳转 App |
-| `bootloader/bl_esp01s.c` | ESP-01S 通信：AT 命令、AP 配置、HTTP 分块上传解析 |
+| `bootloader/bl_esp01s.c` | ESP-01S 通信：AT 命令、AP 配置、OTA 二进制串口协议接收（包级 ACK/NAK + CRC16/CRC32） |
 | `bootloader/bl_tft.c` | Bootloader 侧屏幕驱动（ST7789 精简版，含 5×7 点阵字体） |
 | `app/main.c` | App 主循环：初始化、传感器采集、控制逻辑 |
 | `board/pin_config.h` | **全部引脚定义**（修改硬件设计需同步） |
@@ -120,11 +120,12 @@ W25Q128 外部 Flash 共 16 MiB，用于固件暂存和参数存储：
 
 ### 修改 WiFi 热点
 
-编辑 `bootloader/bl_esp01s.c` 中 `BL_ESP01S_StartAP()`：
+编辑 `bootloader/bl_esp01s.c` 中 `BL_ESP01S_StartOta()`：
 
 ```c
-ESP_SendCmd("AT+CWSAP=\"QiMingXing\",\"12345678\",1,4", "OK", 800);
-//                ^SSID^            ^密码^   ^通道^  ^加密:4=WPA/WPA2^
+/* 默认热点已硬编码为 QiMingXing / 12345678，修改需同步 ESP-01S 固件 AT+OTAAP 内的 AP_SSID/AP_PASS */
+ESP_SendCmd("AT+OTAAP", "OK", 800);
+//                ^改为 AT+OTAAP^   ^ESP 自定义固件开 AP 并等待二进制 OTA 转发^
 ```
 
 ### 修改引脚
@@ -140,6 +141,8 @@ ESP_SendCmd("AT+CWSAP=\"QiMingXing\",\"12345678\",1,4", "OK", 800);
 
 ## OTA 升级流程
 
+> OTA 链路采用 **自定义二进制串口协议**（非浏览器直传）：网页/HTTP 解析全部由 ESP-01S 完成，STM32 只在 UART 上按 1 KiB/包的二进制协议收固件并写入外部 Flash，因此即使 STM32 仅 20 KB RAM 也能稳定升级。
+
 ### 进入升级模式
 
 Bootloader 每次上电时执行以下判断：
@@ -147,30 +150,49 @@ Bootloader 每次上电时执行以下判断：
 1. 读取升级标志
 2. **无有效 App** 或 **升级标志为 DOWNLOADED** → 进入升级模式（开 AP 热点，等待上传）
 3. 有有效 App 且无升级请求 → 正常跳转 App
+4. **兜底：上电长按编码器按键**（约 3 秒窗口，PB5 按下为低电平）直接进入下载模式，无论 App 是否有效 —— 避免 OTA 写入坏固件后"变砖"无法再进升级界面
 
 两种方式进入升级模式：
 
 - **首次烧录**（只烧 Bootloader，没有 App）→ 自动进入升级模式
 - **App 内升级**：App 的 Web 管理页面点击"固件升级"→ 写入升级标志并复位 → 进入 Bootloader 升级模式
+- **强制下载**：设备上电时长按编码器按键 → 强制进入升级模式
 
 ### 上传固件流程（两阶段）
 
-**阶段 1 — 下载到外部 Flash**
+**阶段 1 — 浏览器 → ESP-01S → STM32 → 外部 Flash**
 
 1. 手机/电脑搜索 WiFi 热点 **`QiMingXing`**（密码 **`12345678`**），约数秒后出现
 2. 连接后浏览器访问 **`http://192.168.4.1`**
-3. 选择 `.bin` 固件文件，点击 **UPLOAD & UPDATE**
-4. 浏览器以 1 KiB 分块方式上传固件，设备下载到外部 Flash（W25Q128），屏幕显示实时进度
-5. 上传完成后校验向量表，写入升级标志，自动重启
+3. 选择 `.bin` 固件文件，点击 **上传并更新**
+4. 浏览器先在前端用 JS 计算文件 CRC32 并随 `?crc=` 上传；ESP 收到后**再次计算 CRC32**，若与浏览器上报值不一致则判定为 WiFi 上传链路污染，拒绝转发（返回 `FIRMWARE CRC MISMATCH`），避免坏固件进入 STM32
+5. 校验通过的固件由 ESP 按二进制协议经 UART 转发给 STM32：
+   - **握手**：ESP → STM32 `[0xAA 0x55 0x01] + [4 字节固件大小 大端]`，STM32 回 `0x06`(ACK)
+   - **数据包**：每 1 KiB 一包 `[0xAA] + [2 字节包序号大端] + [≤1024 数据] + [2 字节 CRC16(Modbus)] + [0x55]`，STM32 回 `0x06`(ACK) 或 `0x15`(NAK 重传)
+   - **结束**：ESP → STM32 `[0xAA 0x55 0x02] + [4 字节总 CRC32 大端]`，STM32 回 ACK
+   - STM32 边收边写入外部 Flash（W25Q128，按 256 字节页编程），屏幕显示实时进度
+6. 收完后 STM32 **整包 CRC32 全量校验**（覆盖整个固件），通过后写入升级标志，ESP 收到 `0xDD` 结束帧后由 STM32 发送 `AT+OTACLOSE` 使其进入低功耗休眠，设备自动重启
 
 **阶段 2 — 拷贝到内部 Flash**
 
-6. 重启后 Bootloader 检测到升级标志，显示 "WRITE TO MCU" + 拷贝进度条
-7. 从外部 Flash 读取固件，刷入内部 Flash App 分区，每 10% 刷新进度
-8. 校验 App 向量表有效后，清标志并再次重启
-9. 重启后 Bootloader 跳转新 App，App 正常运行
+7. 重启后 Bootloader 检测到升级标志，显示 "WRITE TO MCU" + 拷贝进度条
+8. 从外部 Flash 读取固件，刷入内部 Flash App 分区，每 10% 刷新进度
+9. 校验 App 向量表有效后，清标志并再次重启
+10. 重启后 Bootloader 跳转新 App，App 正常运行
 
-> 升级全程无需人工干预，进度条实时显示。
+> 升级全程无需人工干预，进度条实时显示。包级 ACK/NAK + 整包 CRC32 双重防护，可纠正旧版"只校验向量表"漏检的大固件静默损坏问题。
+
+### ESP-01S 自定义固件（独立仓库）
+
+ESP-01S 已替换为自定义 Arduino 固件（`QiMingXing-ESP01S` 仓库），不再依赖官方 stock AT。自定义指令：
+
+| 指令 | 说明 | STM32 用法 |
+|---|---|---|
+| `AT` | 探测 ESP 就绪，回 `OK` | Bootloader 上电先发 `AT` 等 `OK` |
+| `AT+OTAAP` | 开 SoftAP(`QiMingXing`/`12345678`) + 网页上传固件，上传完按二进制协议转发给 STM32 | Bootloader 发 `AT+OTAAP\r\n`，等 `OK\r\n` 后进入 UART 接收状态 |
+| `AT+CFGAP` | 开配网 AP，网页选周边 WiFi 并回 `+IP:xxx.xxx.xxx.xxx` | 需配网时发 `AT+CFGAP\r\n` |
+| `AT+PUSHDATA=<str>` | 缓存数据，数据展示页每 2 秒轮询显示 | App 定时发送 |
+| `AT+OTACLOSE` | 关闭所有 Web Server，ESP 进入 Modem-Sleep 低功耗（**由 STM32 控制时机**） | 固件升级完成/无需网络时发送 |
 
 ## 常见问题
 
@@ -180,11 +202,14 @@ A: 检查目标宏。Bootloader 必须带 `BOOTLOADER_BUILD` 宏，App 目标不
 **Q: 找不到热点？**
 A: ① 确认只烧了 Bootloader 或升级标志为 DOWNLOADED（否则 Bootloader 会直接跳 App 不开 AP）；② 检查 ESP-01S 供电正常（PA12 控制 AO3401 P-MOS 为 ESP 供电）。
 
-**Q: 热点连上了但网页 404？**
-A: 重新编译烧录最新 Bootloader（旧版 `+IPD` 解析有 bug，已修复）。
+**Q: 热点连上了但网页打不开？**
+A: 确认已烧录**自定义 ESP-01S 固件**（`QiMingXing-ESP01S` 仓库），网页由 ESP 自身托管，不再依赖 Bootloader 的 `+IPD` 解析。Bootloader 只负责在 `AT+OTAAP` 后按二进制协议收固件。
 
-**Q: OTA 下载卡在 10% 不动的？**
-A: 旧版 Bootloader 的 HTTP 响应缺少 `Content-Length` 头，导致浏览器等待连接关闭。已修复，重新编译烧录即可。
+**Q: OTA 上传提示 FIRMWARE CRC MISMATCH？**
+A: 浏览器上报的 CRC32 与 ESP 端重新计算的文件 CRC32 不一致，说明 WiFi 上传链路出现丢包污染。这是预期的防护，直接在网页重试即可（TCP 节流通常重试即成功）。
+
+**Q: 进度卡在某百分比不动 / 写入 W25Q128 报 WERR？**
+A: 大固件通过 SPI1 写外部 Flash 对时序较敏感，可降低 SPI 速率（如 `/32` 分频）或确认 `W25Q128_ClearProtection()` 已清状态寄存器 BP 写保护位；写前已回读 WEL 确认页编程未被硬件忽略。
 
 **Q: 烧录后反复重启？**
 A: 检查 SPI/延时循环中是否喂狗。确认 `Watchdog_Kick()` 在长循环中调用（如 `Delay_ms` 内部每 131072 次迭代喂一次）。
@@ -235,3 +260,11 @@ A: 确认背光引脚（PB0）配置为推挽输出并置高。若硬件上背�
 - ℃ 单位圆圈位置修正：° 小圆圈（scale=1）置于 C 左上角，与 C 分离不重叠；C/g 颜色与数字同步（原灰色 `UI_TEXT_DIM`）
 - **旋转编码器文字闪烁**：`UI_UpdateMainDynamic()` 原每 50ms 无条件用固定 `CARD_BG_*` 底色重绘值文字、未考虑选中态底色（`UI_CARD_HI`），导致选中卡文字反复擦写闪烁；改为值文字底色随 `selected_item` 动态选择，并加 `last_val[4]` 缓存（值不变不重绘）+ `last_sel` 检测（切换选中项时统一刷底色）
 - `draw_card_pulse` 末行缩进错乱修复
+
+#### OTA 协议重构（与 `QiMingXing-ESP01S` 自定义固件配套）
+- **HTTP 解析从 STM32 转移到 ESP-01S**：Bootloader 不再解析 `+IPD`/HTTP，改由 ESP 自定义固件托管网页、接收固件并以二进制串口协议转发给 STM32（1 KiB/包，包级 ACK/NAK + 包内 CRC16 Modbus + 整包 CRC32 IEEE802.3），STM32 仅 `BL_ESP01S_Process()` 收二进制并写 W25Q128
+- **整包 CRC32 全量校验**：纠正旧版"只校验向量表"漏检大固件静默损坏的问题；ESP 端入口校验——浏览器端算文件 CRC32 随 `?crc=` 上传，ESP 重算不一致即拒绝转发（`FIRMWARE CRC MISMATCH`），挡住 WiFi 上传链路污染
+- **ESP 休眠由 STM32 控制**：新增 `BL_ESP01S_CloseWeb()`（发 `AT+OTACLOSE`），在下载收完并写 DOWNLOADED 标志、复位前调用，让 ESP 关闭网页/AP 进入 Modem-Sleep
+- **上电兜底强制下载**：`EncoderButton_HeldAtBoot()` 长按编码器（PB5）直接进入下载模式，避免坏固件变砖
+- **W25Q128 写保护清除**：拷贝/下载前调用 `W25Q128_ClearProtection()` 清 BP 位，避免页编程被硬件忽略；写前回读 WEL 确认
+- `BL_ESP01S_StartAP()` 重命名为 `BL_ESP01S_StartOta()`（发 `AT+OTAAP`）；移除 `BL_ESP01S_GetBodyLen()` 等 HTTP 相关接口
