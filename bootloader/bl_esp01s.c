@@ -213,7 +213,7 @@ static void flush_fw_buffer(void)
             BL_TFT_ShowStatus("SIZE ERR");
             return;
         }
-        /* 内部 Flash 写入已由 stage_erase() 整区擦除保证可编程；写失败即终止传输 */
+        /* 内部 Flash 已由握手后的 erase_app_for_ota() 整区擦除保证可编程；写失败即终止传输 */
         if (Flash_Write(fw_write_addr, fw_buffer, fw_buf_idx) != 0) {
             transfer_error = 1;
             fw_buf_idx = 0;
@@ -249,6 +249,17 @@ static uint16_t ota_crc16(uint16_t seq, const uint8_t *data, uint16_t len)
     return crc;
 }
 
+/* 收到固件握手（上传即将开始）后整区擦除内部 App 分区。
+ * 误入 BL 模式且未上传固件时不会擦除，保留可运行 App。 */
+static int erase_app_for_ota(void)
+{
+    for (uint32_t addr = APP_ADDR; addr < APP_ADDR + APP_SIZE; addr += FLASH_PAGE_SIZE) {
+        Watchdog_Kick();
+        if (Flash_ErasePage(addr) != 0) return -1;
+    }
+    return 0;
+}
+
 /* 处理一个 OTA 字节（FSM 驱动） */
 static void feed_ota_byte(uint8_t b)
 {
@@ -272,6 +283,14 @@ static void feed_ota_byte(uint8_t b)
                 transfer_error = 1;   /* 大小非法：直接拒绝，防止越界写内部 Flash */
                 break;
             }
+            /* 固件已开始上传：此刻才擦除 App 分区（误入 BL 且未上传时不清除旧固件） */
+            BL_TFT_ShowStatus("ERASE...");
+            if (erase_app_for_ota() != 0) {
+                transfer_error = 1;
+                BL_TFT_ShowStatus("ERASE FAIL");
+                break;
+            }
+            BL_TFT_ShowStatus("ERASE OK");
             /* 复位写入上下文 */
             fw_received = 0;
             fw_write_addr = APP_ADDR;

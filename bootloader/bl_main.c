@@ -56,22 +56,6 @@ int main(void)
 static uint32_t fw_total = 0;
 static uint32_t fw_crc = 0;
 
-/* 整区擦除内部 App 分区，供 OTA 直写。每次下载前调用，
- * 失败重试时重新擦除（内部 Flash 只能 1→0，不能覆盖二次编程）。 */
-static int stage_erase(void)
-{
-    BL_TFT_ShowStatus("ERASE...");
-    for (uint32_t addr = APP_ADDR; addr < APP_ADDR + APP_SIZE; addr += FLASH_PAGE_SIZE) {
-        Watchdog_Kick();
-        if (Flash_ErasePage(addr) != 0) {
-            BL_TFT_ShowStatus("ERASE FAIL");
-            return -1;
-        }
-    }
-    BL_TFT_ShowStatus("ERASE OK");
-    return 0;
-}
-
 /* 校验已直写到内部 App 分区的固件：
  * 1. 重算内部 Flash [0, fw_total) 的 CRC32，与线上累积值 fw_crc 一致；
  * 2. 校验 APP_ADDR 处向量表（SP=0x2000xxxx，PC=0x0800xxxx 且在 App 区内）。 */
@@ -181,12 +165,9 @@ void BootloaderV2_EnterUpgradeMode(void)
         fw_total = 0;
         fw_crc = 0;
 
-        if (stage_erase() != 0) {
-            /* 内部 App 区擦除失败：后续写入无意义，直接重试 */
-            BL_ESP01S_ResetTransfer();
-            BL_TFT_ShowStatus("WAIT");
-            continue;
-        }
+        /* 注意：不在进入升级模式时擦除 App 分区。擦除推迟到
+         * ESP 握手收到固件大小（上传真正开始）时才执行，
+         * 避免误入 BL 模式就清除可运行 App。 */
 
         BL_ESP01S_ResetTransfer();
         BL_TFT_ShowStatus("WAIT");
