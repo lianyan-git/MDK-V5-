@@ -37,7 +37,7 @@ COMMON_SOURCES = (
 TARGETS = {
     "Bootloader": {
         "start": "0x08000000",
-        "size": "0x00004800",
+        "size": "0x00003000",
         "output": "dryer_bootloader",
         "entry_name": "bl_main.c",
         "entry_path": r"..\..\bootloader\bl_main.c",
@@ -52,12 +52,12 @@ TARGETS = {
         ),
     },
     "APP": {
-        "start": "0x08005000",
-        "size": "0x0000B000",
+        "start": "0x08003800",
+        "size": "0x0000C800",
         "output": "dryer_app",
         "entry_name": "main.c",
         "entry_path": r"..\..\app\main.c",
-        "defines": "STM32F10X_MD,USE_STDPERIPH_DRIVER,VECT_TAB_OFFSET=0x5000",
+        "defines": "STM32F10X_MD,USE_STDPERIPH_DRIVER,VECT_TAB_OFFSET=0x3800",
         "sources": (
             ("App", "system_config.c", 1, r"..\..\app\system_config.c"),
             ("App", "ui_manager.c", 1, r"..\..\app\ui_manager.c"),

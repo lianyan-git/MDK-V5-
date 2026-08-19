@@ -15,7 +15,7 @@
           <Vendor>STMicroelectronics</Vendor>
           <PackID>Keil.STM32F1xx_DFP.2.4.1</PackID>
           <PackURL>https://www.keil.com/pack/</PackURL>
-          <Cpu>IRAM(0x20000000,0x00005000) IROM(0x08000000,0x00004800) CPUTYPE("Cortex-M3") CLOCK(12000000) ELITTLE</Cpu>
+          <Cpu>IRAM(0x20000000,0x00005000) IROM(0x08000000,0x00003000) CPUTYPE("Cortex-M3") CLOCK(12000000) ELITTLE</Cpu>
           <FlashUtilSpec />
           <StartupFile />
           <FlashDriverDll>UL2CM3(-S0 -C0 -P0 -FD20000000 -FC1000 -FN1 -FF0STM32F10x_128 -FS08000000 -FL010000 -FP0($$Device:STM32F103C8$Flash\STM32F10x_128.FLM))</FlashDriverDll>
@@ -805,8 +805,8 @@
               </IRAM>
               <IROM>
                 <Type>1</Type>
-                <StartAddress>0x08005000</StartAddress>
-                <Size>0x0000B000</Size>
+                <StartAddress>0x08003800</StartAddress>
+                <Size>0x0000C800</Size>
               </IROM>
               <XRAM>
                 <Type>0</Type>
@@ -830,8 +830,8 @@
               </OCR_RVCT3>
               <OCR_RVCT4>
                 <Type>1</Type>
-                <StartAddress>0x08005000</StartAddress>
-                <Size>0x0000B000</Size>
+                <StartAddress>0x08003800</StartAddress>
+                <Size>0x0000C800</Size>
               </OCR_RVCT4>
               <OCR_RVCT5>
                 <Type>1</Type>
@@ -892,7 +892,7 @@
             <v6Rtti>0</v6Rtti>
             <VariousControls>
               <MiscControls />
-              <Define>STM32F10X_MD,USE_STDPERIPH_DRIVER,VECT_TAB_OFFSET=0x5000</Define>
+              <Define>STM32F10X_MD,USE_STDPERIPH_DRIVER,VECT_TAB_OFFSET=0x3800</Define>
               <Undefine />
               <IncludePath>..\..\app;..\..\board;..\..\bootloader;..\..\bsp;..\..\shared;..\..\libraries\CMSIS\CM3\CoreSupport;..\..\libraries\CMSIS\CM3\DeviceSupport\ST\STM32F10x;..\..\libraries\STM32F10x_StdPeriph_Driver\inc;..\..\module</IncludePath>
             </VariousControls>

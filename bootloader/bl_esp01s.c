@@ -9,7 +9,6 @@
 #include "system_time.h"
 #include "stm32f10x.h"
 #include <string.h>
-#include <stdio.h>
 
 /*═════════════════════════════════════════════════════════════════════════════
  * 自定义 ESP 固件 OTA 串口协议（1KB/包，包级 ACK）
@@ -283,6 +282,16 @@ static void feed_ota_byte(uint8_t b)
                 transfer_error = 1;   /* 大小非法：直接拒绝，防止越界写内部 Flash */
                 break;
             }
+            /* 先整区擦除，再回握手 ACK。ESP 侧握手等待已放宽到 10s，
+             * 擦除期间 ESP 不发数据包 → 不会发生 USART 溢出/残包。
+             * 必须擦完再 ACK，否则 ESP 提前发包会撞上擦除丢字节。 */
+            BL_TFT_ShowStatus("ERASE...");
+            if (erase_app_for_ota() != 0) {
+                transfer_error = 1;
+                BL_TFT_ShowStatus("ERASE FAIL");
+                break;
+            }
+            BL_TFT_ShowStatus("ERASE OK");
             /* 复位写入上下文 */
             fw_received = 0;
             fw_write_addr = APP_ADDR;
@@ -290,22 +299,8 @@ static void feed_ota_byte(uint8_t b)
             exp_seq = 0;
             pkt_len = 0;
             transfer_state = 1;
-            /* 先回握手 ACK：擦除耗时 ~2s，若先擦除再 ACK 会让 ESP 的
-             * 3s uart_wait_ack 超时或误读旧 ACK，导致包序号错乱报 Upload Error。
-             * 回 ACK 后再擦除，ESP 发来的首包会被 RX 缓冲暂存。 */
-            send_byte(ACK_BYTE);
+            send_byte(ACK_BYTE);          /* 阶段1 ACK：擦除完成，等 ESP 发数据包 */
             ota_st = S_PKT_AA;
-            BL_TFT_ShowStatus("ERASE...");
-            if (erase_app_for_ota() != 0) {
-                transfer_error = 1;
-                BL_TFT_ShowStatus("ERASE FAIL");
-            } else {
-                BL_TFT_ShowStatus("ERASE OK");
-                /* 擦除期间 USART 溢出可能导致接收缓冲里有半个包/乱码字节，
-                 * 全部丢弃。ESP 未收到本包 ACK 会重传（同包序号），
-                 * FSM 从 S_PKT_AA 重新收即可。 */
-                EspUart_ClearRx();
-            }
         }
         break;
 
@@ -365,7 +360,9 @@ static void feed_ota_byte(uint8_t b)
                 ota_st = S_PKT_AA;
             }
         } else {
-            transfer_error = 1;
+            /* 尾字节非 0x55：多半是重传期间的残串/噪声，丢弃并等下一个 0xAA 起包，
+             * 不要直接置 transfer_error 报 Upload Error。 */
+            ota_st = S_PKT_AA;
         }
         break;
 

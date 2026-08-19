@@ -173,7 +173,7 @@ targets:
       defineList:
         - STM32F10X_MD
         - USE_STDPERIPH_DRIVER
-        - VECT_TAB_OFFSET=0x5000
+        - VECT_TAB_OFFSET=0x3800
       incList:
         - .
         - ../../app
@@ -226,7 +226,7 @@ targets:
             $outputTaskExcludes:
               - .bin
             output-format: elf
-            ro-base: "0x08004800"
+            ro-base: "0x08003800"
             rw-base: "0x20000000"
             xo-base: ""
         scatterFilePath: ""
@@ -293,8 +293,8 @@ targets:
               isChecked: true
               isStartup: true
               mem:
-                size: "0x0000B800"
-                startAddr: "0x08004800"
+                size: "0x0000C800"
+                startAddr: "0x08003800"
               tag: IROM
             - id: 2
               isChecked: false

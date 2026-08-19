@@ -11,7 +11,6 @@
 #include "system_time.h"
 #include "stm32f10x.h"
 #include <string.h>
-#include <stdio.h>
 
 static void Delay_ms(uint16_t ms);
 
@@ -190,6 +189,7 @@ void BootloaderV2_EnterUpgradeMode(void)
         uint32_t last_progress_tick = 0;
         uint32_t last_rx_time = 0;
         uint32_t last_recv = 0;
+        uint32_t state1_since = 0;   /* 握手完成后开始计时首包 */
         uint8_t last_progress_step = 0;
         int transfer_done = 0;
 
@@ -212,20 +212,26 @@ void BootloaderV2_EnterUpgradeMode(void)
 
             int esp_state = BL_ESP01S_GetTransferState();
             if (esp_state == 1) {
+                if (state1_since == 0) state1_since = now;   /* 握手完成时刻 */
                 fw_total = BL_ESP01S_GetTotalSize();
                 uint32_t recv = BL_ESP01S_GetReceivedSize();
                 uint32_t total = BL_ESP01S_GetTotalFirmwareSize();   /* X-Total-Size 总字节数 */
                 if (total > 0) {
                     uint8_t progress = (uint8_t)(recv * 100U / total);
-                    uint8_t step = (uint8_t)(progress / 10);
-                    if (step != last_progress_step && (int32_t)(now - last_progress_tick) > 500) {
-                        last_progress_step = step;
+                    /* 进度条差分局部刷新：每次 1% 增量只有几像素，人眼不可见；
+                     * 状态文字保持 "DOWNLOAD TO FLASH" 不动，避免文字重绘闪烁。 */
+                    if (progress != last_progress_step &&
+                        (int32_t)(now - last_progress_tick) > 40) {
+                        last_progress_step = progress;
                         last_progress_tick = now;
                         BL_TFT_ShowProgressBar(progress);
-                        char buf[24];
-                        sprintf(buf, "DL %d%%", progress);
-                        BL_TFT_ShowStatus(buf);
                     }
+                }
+                /* 握手后 20s 内一个完整包都没收到（首包重传也失败）：中止，不再死等 */
+                if (last_recv == 0 && state1_since != 0 && (int32_t)(now - state1_since) > 20000) {
+                    BL_ESP01S_AbortTransfer();
+                    transfer_done = 1;
+                    break;
                 }
                 /* 超时无新数据：如果数据已收全，直接完成（不需等浏览器 /done）；
                  * 否则中止重试。 */

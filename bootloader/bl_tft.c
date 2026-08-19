@@ -10,7 +10,6 @@
 #include "bsp_spi1_bus.h"
 #include "stm32f10x.h"
 #include <string.h>
-#include <stdio.h>
 
 static void Delay_ms(uint16_t ms);
 
@@ -355,26 +354,38 @@ void BL_TFT_ShowAPInfo(const char *ssid, const char *pass, const char *ip) {
     {
         char buf[32];
         buf[0] = '\0';
+        strcat(buf, "IP:");
+        strcat(buf, ip);
         /* "IP:xxx" 长度（字符宽 7px） */
         uint16_t ip_len = 3;
         const char *p = ip;
         while (*p) { ip_len += 7; p++; }
         int x = (TFT_WIDTH - ip_len) / 2;
         if (x < 0) x = 0;
-        sprintf(buf, "IP:%s", ip);
         BL_TFT_DrawString((uint16_t)x, 124, buf, COLOR_LIME, 1);
     }
 }
 
 void BL_TFT_ShowProgressBar(uint8_t percent) {
+    /* 局部差分刷新：只画新增的绿色段，不清整条。每次变化只有几像素宽，
+     * 人眼几乎看不到刷新过程。0 时整条清灰（进度条起点）。 */
+    static uint16_t bar_px = 0xFFFF;   /* 0xFFFF 表示未初始化 */
     if (percent > 100) percent = 100;
 
-    uint16_t bar_width = ((TFT_WIDTH - 22) * percent) / 100;
-
-    // 清除旧进度
-    BL_TFT_FillRect(11, 76, TFT_WIDTH-22, 18, COLOR_GRAY);
-    // 画新进度
-    BL_TFT_FillRect(11, 76, bar_width, 18, COLOR_GREEN);
+    uint16_t new_px = ((TFT_WIDTH - 22) * percent) / 100;
+    if (bar_px == 0xFFFF) {   /* 首次：清灰底 */
+        BL_TFT_FillRect(11, 76, TFT_WIDTH - 22, 18, COLOR_GRAY);
+        bar_px = 0;
+    }
+    if (new_px < bar_px) {    /* 进度回退：整条重画 */
+        BL_TFT_FillRect(11, 76, TFT_WIDTH - 22, 18, COLOR_GRAY);
+        bar_px = 0;
+    }
+    if (new_px > bar_px) {
+        /* 只补画 (bar_px, new_px] 这段增量 */
+        BL_TFT_FillRect(11 + bar_px, 76, new_px - bar_px, 18, COLOR_GREEN);
+        bar_px = new_px;
+    }
 }
 
 void BL_TFT_ShowError(const char *text) {
