@@ -54,9 +54,6 @@ STM32F103C8T6 内部 Flash 共 64 KiB，地址范围 `0x08000000` ~ `0x0800FFFF`
 
 > 注意：OTA 固件由 Bootloader 校验通过后**直写内部 App 分区**，不再经外部 Flash 暂存。
 
-> ⚠️ **ESP 电源 MOS 硬件注意**：ESP 高边开关使用 **AO3401（P-MOS）**，SOT-23 引脚为 1=栅极、2=源极、3=漏极（S 接 3.3V，D 接 ESP VCC，G 接 PA12）。
-> 原设计焊盘若按 AO3400（N-MOS）布局，直接焊 AO3401 会导致源/漏接反，体二极管直通、软件无法关断 ESP——需将 2/3 引脚对调。
-
 ## 外部 Flash 布局（W25Q128，16 MiB）
 
 W25Q128 外部 Flash 共 16 MiB，用于参数存储、用户数据等：
@@ -118,17 +115,11 @@ W25Q128 外部 Flash 共 16 MiB，用于参数存储、用户数据等：
 
 ### 修改 WiFi 热点
 
-编辑 `bootloader/bl_esp01s.c` 中 `BL_ESP01S_StartOta()`：
-
-```c
-/* 默认热点已硬编码为 QiMingXing / 12345678，修改需同步 ESP-01S 固件 AT+OTAAP 内的 AP_SSID/AP_PASS */
-ESP_SendCmd("AT+OTAAP", "OK", 800);
-//                ^改为 AT+OTAAP^   ^ESP 自定义固件开 AP 并等待二进制 OTA 转发^
-```
+需要编辑 ESP01S的固件，固件见主页另一个仓库
 
 ### 修改引脚
 
-编辑 `board/pin_config.h`（例如更换 ESP 串口、屏幕引脚时）。
+编辑 `board/pin_config.h`（例如更换 ESP 串口、屏幕引脚时）
 
 ### 修改 Flash 分区
 
@@ -188,25 +179,16 @@ ESP-01S 已替换为自定义 Arduino 固件（`QiMingXing-ESP01S` 仓库），�
 ## 常见问题
 
 **Q: 编译报错 `main` 重复定义？**
-A: 检查目标宏。Bootloader 必须带 `BOOTLOADER_BUILD` 宏，App 目标不能带。若 `eide.yml` 的 excludeList 未正确排除，会导致 `app/main.c` 的 `main()` 进入 Bootloader 链接。
+A: 检查目标宏。Bootloader 必须带 `BOOTLOADER_BUILD` 宏，App 目标不能带。若 `eide.yml` 的 excludeList 未正确排除，会导致 `app/main.c` 的 `main()` 进入 Bootloader 链接
 
 **Q: 找不到热点？**
-A: ① 确认只烧了 Bootloader 或升级标志为 DOWNLOADED（否则 Bootloader 会直接跳 App 不开 AP）；② 检查 ESP-01S 供电正常（PA12 控制 AO3401 P-MOS 为 ESP 供电）。
+A: 插拔一下电源
 
 **Q: 热点连上了但网页打不开？**
-A: 确认已烧录**自定义 ESP-01S 固件**（`QiMingXing-ESP01S` 仓库），网页由 ESP 自身托管，不再依赖 Bootloader 的 `+IPD` 解析。Bootloader 只负责在 `AT+OTAAP` 后按二进制协议收固件。
-
-**Q: OTA 上传提示 FIRMWARE CRC MISMATCH？**
-A: 浏览器上报的 CRC32 与 ESP 端重新计算的文件 CRC32 不一致，说明 WiFi 上传链路出现丢包污染。这是预期的防护，直接在网页重试即可（TCP 节流通常重试即成功）。
-
-**Q: 进度卡在某百分比不动 / 写入 W25Q128 报 WERR？**
-A: 大固件通过 SPI1 写外部 Flash 对时序较敏感，可降低 SPI 速率（如 `/32` 分频）或确认 `W25Q128_ClearProtection()` 已清状态寄存器 BP 写保护位；写前已回读 WEL 确认页编程未被硬件忽略。
-
-**Q: 烧录后反复重启？**
-A: 检查 SPI/延时循环中是否喂狗。确认 `Watchdog_Kick()` 在长循环中调用（如 `Delay_ms` 内部每 131072 次迭代喂一次）。
+A: 确认已烧录**自定义 ESP-01S 固件**（`QiMingXing-ESP01S` 仓库），网页由 ESP 自身托管，不再依赖 Bootloader 的 `+IPD` 解析。Bootloader 只负责在 `AT+OTAAP` 后按二进制协议收固件
 
 **Q: TFT 屏幕不亮？**
-A: 确认背光引脚（PB0）配置为推挽输出并置高。若硬件上背光 MOS 已拆除，需将背光 LED 负极直接接地或通过电阻接 3.3V。
+A: 确认背光引脚（PB0）配置为推挽输出并置高。若硬件上背光 MOS 已拆除，需检查背光有没有3.3V
 
 ## 更新日志
 
