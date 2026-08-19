@@ -145,6 +145,11 @@ void BootloaderV2_Run(void)
             if (BootloaderV2_VerifyApp() == 0) { app_valid = 1; break; }
             Delay_ms(10);
         }
+        if (!app_valid) {
+            /* App 无效：自动进入升级模式（内部会先初始化 SPI1 再点亮屏幕，
+             * 否则黑屏无法显示升级界面）。升级流程不返回或复位。 */
+            BootloaderV2_EnterUpgradeMode();
+        }
         if (app_valid) {
             BootloaderV2_JumpToApp();
         }
