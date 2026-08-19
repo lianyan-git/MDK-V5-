@@ -283,14 +283,6 @@ static void feed_ota_byte(uint8_t b)
                 transfer_error = 1;   /* 大小非法：直接拒绝，防止越界写内部 Flash */
                 break;
             }
-            /* 固件已开始上传：此刻才擦除 App 分区（误入 BL 且未上传时不清除旧固件） */
-            BL_TFT_ShowStatus("ERASE...");
-            if (erase_app_for_ota() != 0) {
-                transfer_error = 1;
-                BL_TFT_ShowStatus("ERASE FAIL");
-                break;
-            }
-            BL_TFT_ShowStatus("ERASE OK");
             /* 复位写入上下文 */
             fw_received = 0;
             fw_write_addr = APP_ADDR;
@@ -298,8 +290,18 @@ static void feed_ota_byte(uint8_t b)
             exp_seq = 0;
             pkt_len = 0;
             transfer_state = 1;
-            send_byte(ACK_BYTE);          /* 阶段1 ACK */
+            /* 先回握手 ACK：擦除耗时 ~2s，若先擦除再 ACK 会让 ESP 的
+             * 3s uart_wait_ack 超时或误读旧 ACK，导致包序号错乱报 Upload Error。
+             * 回 ACK 后再擦除，ESP 发来的首包会被 RX 缓冲暂存。 */
+            send_byte(ACK_BYTE);
             ota_st = S_PKT_AA;
+            BL_TFT_ShowStatus("ERASE...");
+            if (erase_app_for_ota() != 0) {
+                transfer_error = 1;
+                BL_TFT_ShowStatus("ERASE FAIL");
+            } else {
+                BL_TFT_ShowStatus("ERASE OK");
+            }
         }
         break;
 
