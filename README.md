@@ -100,7 +100,7 @@ W25Q128 外部 Flash 共 16 MiB，用于参数存储、用户数据等：
 | `dryer_app.bin` | `0x08003400` |
 
 烧录确认：
-- Bootloader 当前 ~11.4 KiB，分区上限 12 KiB，不超限
+- Bootloader 当前 ~11.9 KiB（12160 字节），分区上限 12 KiB，不超限
 - 两个文件地址不重叠（Bootloader 到 `0x08002FFF`，标志区从 `0x08003000` 开始）
 
 ## 代码入口
@@ -227,6 +227,7 @@ A: 确认背光引脚（PB0）配置为推挽输出并置高。若硬件上背�
 - **主界面时间栏闪烁**：`UI_UpdateMainDynamic()` 原每 50ms 无条件重绘底部时间文字，`TFT_DrawChar` 先填字符格背景再画前景 → 直接写 GRAM 无双缓冲撕裂闪；改为仅当时间字符串变化时重绘（值未变不画），REM 倒计时同理 gating 并在退出烘干时清残留行。
 - **菜单旋转无效**：`UI_Update()` 同屏动态分支无 `SCREEN_MENU`，旋转改 `selected_item` 后不重绘；新增 `SCREEN_MENU` 局部分支 + `UI_RefreshMenuSel(old,new)` 只重绘旧/新两行（不整屏刷新），旋转即可移动选中项。
 - 顺带：ESP-01S 握手 ACK 等待 3s→10s，覆盖 STM32 擦除 App 分区（约 2s）耗时（详见 `QiMingXing-ESP01S` 仓库）。
+- **Keil Bootloader IROM 区校正**：`project/MDK(V5)/Project.uvprojx` 的 Bootloader 目标 IROM 大小由 `0x4800`(18 KiB) 改回 `0x3000`(12 KiB)，与分区契约 `PLATFORM_BOOT_SIZE=0x3000`（及 EIDE `eide.yml`、Flash 分区表）一致，强制 Bootloader 不超过 12 KiB 分区上限（此前 18 KiB 区会静默放行溢出、覆盖升级标志区 `0x08003000` 乃至 App 区 `0x08003400`）。
 
 ### 2026-08-16
 
