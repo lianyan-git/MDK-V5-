@@ -89,6 +89,13 @@ void EspUart_ClearRx(void)
 
 void EspUart_RxIrqHandler(void)
 {
+    /* 溢出（ORE）：CPU 在内部 Flash 擦写期间被 stall，单字节接收寄存器
+     * 来不及读取，下一字节到达即溢出。读 SR 再读 DR 可清除 ORE+RXNE。 */
+    if (USART_GetFlagStatus(USART1, USART_FLAG_ORE) != RESET) {
+        (void)USART1->SR;
+        (void)USART1->DR;
+        rx_overflow = 1;
+    }
     if (USART_GetITStatus(USART1, USART_IT_RXNE) != RESET) {
         uint8_t byte = (uint8_t)USART_ReceiveData(USART1);
         uint16_t next = (uint16_t)((rx_head + 1U) % ESP_UART_RX_CAPACITY);

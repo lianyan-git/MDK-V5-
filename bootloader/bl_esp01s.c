@@ -301,13 +301,17 @@ static void feed_ota_byte(uint8_t b)
                 BL_TFT_ShowStatus("ERASE FAIL");
             } else {
                 BL_TFT_ShowStatus("ERASE OK");
+                /* 擦除期间 USART 溢出可能导致接收缓冲里有半个包/乱码字节，
+                 * 全部丢弃。ESP 未收到本包 ACK 会重传（同包序号），
+                 * FSM 从 S_PKT_AA 重新收即可。 */
+                EspUart_ClearRx();
             }
         }
         break;
 
     case S_PKT_AA:
+        /* 容错：噪声/溢出残留字节直接忽略，等 ESP 重传的 0xAA 起包。 */
         if (b == 0xAA) ota_st = S_PKT_SEQ0;
-        else { transfer_error = 1; }
         break;
     case S_PKT_SEQ0:
         pkt_seq = (uint16_t)b << 8;
