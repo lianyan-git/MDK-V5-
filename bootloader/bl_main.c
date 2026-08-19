@@ -55,153 +55,60 @@ int main(void)
 
 static uint32_t fw_total = 0;
 static uint32_t fw_crc = 0;
-static uint32_t fw_start = 0;   /* 固件在外部 Flash 中的偏移（搜索向量表定位） */
 
-/* 校验失败诊断：记录计算 CRC / 期望 CRC / 覆盖长度，便于定位写坏还是读坏 */
-static uint32_t g_dbg_crc_calc = 0;
-static uint32_t g_dbg_crc_exp  = 0;
-static uint32_t g_dbg_crc_len  = 0;
-
-/* 重算暂存镜像 [0, len) 的 CRC32（与 verify 同算法），用于二次读取比对读稳定性 */
-static uint32_t staged_crc_recompute(uint32_t len)
-{
-    uint8_t buf[FLASH_CHUNK];
-    uint32_t crc = 0xFFFFFFFFU;
-    uint32_t rd = 0U;
-    uint32_t rem = len;
-    while (rem > 0U) {
-        uint32_t rl = (rem > sizeof(buf)) ? sizeof(buf) : rem;
-        Watchdog_Kick();
-        if (W25Q128_Read(FIRMWARE_TEMP_ADDR + rd, buf, rl) != W25Q128_OK) return 0U;
-        for (uint32_t i = 0; i < rl; i++) {
-            crc ^= buf[i];
-            for (uint8_t j = 0; j < 8; j++)
-                crc = (crc >> 1) ^ (0xEDB88320U & -(crc & 1));
-        }
-        rd += rl; rem -= rl;
-    }
-    return ~crc;
-}
-
-static int erase_app_area_with_progress(void)
-{
-    uint32_t total_pages = APP_SIZE / FLASH_PAGE_SIZE;
-    uint32_t done = 0;
-    uint32_t addr;
-
-    BL_TFT_ShowStatus("Erasing Flash...");
-    for (addr = APP_ADDR; addr < APP_ADDR + APP_SIZE; addr += FLASH_PAGE_SIZE) {
-        Watchdog_Kick();
-        if (Flash_ErasePage(addr) != 0) return -1;
-        done++;
-        if ((done % ERASE_PROGRESS_PAGES) == 0) {
-            uint8_t pct = (uint8_t)(done * 100U / total_pages);
-            BL_TFT_ShowProgressBar(pct);
-        }
-    }
-    BL_TFT_ShowProgressBar(100);
-    return 0;
-}
-
+/* 整区擦除内部 App 分区，供 OTA 直写。每次下载前调用，
+ * 失败重试时重新擦除（内部 Flash 只能 1→0，不能覆盖二次编程）。 */
 static int stage_erase(void)
 {
     BL_TFT_ShowStatus("ERASE...");
-    W25Q128_ClearProtection();   /* 清除状态寄存器 BP 写保护位，避免页编程被硬件忽略 */
-    if (W25Q128_EraseRange(FIRMWARE_TEMP_ADDR, PLATFORM_FIRMWARE_ERASE_SIZE) != W25Q128_OK) {
-        BL_TFT_ShowStatus("ERASE FAIL");
-        return -1;
+    for (uint32_t addr = APP_ADDR; addr < APP_ADDR + APP_SIZE; addr += FLASH_PAGE_SIZE) {
+        Watchdog_Kick();
+        if (Flash_ErasePage(addr) != 0) {
+            BL_TFT_ShowStatus("ERASE FAIL");
+            return -1;
+        }
     }
     BL_TFT_ShowStatus("ERASE OK");
     return 0;
 }
 
-static int verify_staged_image(void)
+/* 校验已直写到内部 App 分区的固件：
+ * 1. 重算内部 Flash [0, fw_total) 的 CRC32，与线上累积值 fw_crc 一致；
+ * 2. 校验 APP_ADDR 处向量表（SP=0x2000xxxx，PC=0x0800xxxx 且在 App 区内）。 */
+static int verify_app_downloaded(void)
 {
     uint8_t buf[FLASH_CHUNK];
-    uint32_t offset = 0U;
-    int found = 0;
-    uint32_t orig_total = fw_total;   /* 握手/整包原始大小，CRC 覆盖 [0, orig_total) */
+    uint32_t crc = 0xFFFFFFFFU;
+    uint32_t rd = 0U;
+    uint32_t rem = fw_total;
 
-    /* 先在外部 Flash 中搜索固件向量表（SP=0x2000xxxx + PC=0x0800xxxx）定位固件开头。 */
-    fw_start = 0;
-    while (offset + 8 <= orig_total) {
-        uint32_t read_len = offset + FLASH_CHUNK <= orig_total ? FLASH_CHUNK : (orig_total - offset);
-        if (read_len > sizeof(buf)) read_len = sizeof(buf);
+    if (fw_total == 0 || fw_total > APP_SIZE) return -1;
+
+    while (rem > 0U) {
+        uint32_t rl = (rem > sizeof(buf)) ? sizeof(buf) : rem;
         Watchdog_Kick();
-        if (W25Q128_Read(FIRMWARE_TEMP_ADDR + offset, buf, read_len) != W25Q128_OK) return -1;
-
-        for (uint32_t i = 0; i + 8 <= read_len; i++) {
-            uint32_t sp = (uint32_t)buf[i] | ((uint32_t)buf[i+1] << 8) | ((uint32_t)buf[i+2] << 16) | ((uint32_t)buf[i+3] << 24);
-            uint32_t pc = (uint32_t)buf[i+4] | ((uint32_t)buf[i+5] << 8) | ((uint32_t)buf[i+6] << 16) | ((uint32_t)buf[i+7] << 24);
-            if ((sp & 0x2FFE0000) == 0x20000000 && (pc & 0xFF000000) == 0x08000000) {
-                fw_start = offset + i;
-                found = 1;
-                break;
-            }
+        if (Flash_Read(APP_ADDR + rd, buf, rl) != 0) return -1;
+        for (uint32_t i = 0; i < rl; i++) {
+            crc ^= buf[i];
+            for (uint8_t j = 0; j < 8; j++)
+                crc = (crc >> 1) ^ (0xEDB88320U & -(crc & 1));
         }
-        if (found) break;
-        offset += read_len;
+        rd += rl;
+        rem -= rl;
     }
-    if (!found) return -1;   /* 没找到向量表：固件开头丢失 */
+    if ((uint32_t)~crc != fw_crc) return -1;
 
-    fw_total = orig_total - fw_start;
-    if (fw_total > APP_SIZE) fw_total = APP_SIZE;
-
-    /* 整包 CRC32 校验：重算 [0, orig_total) 的 CRC32，与 ESP 上报的 fw_crc 比对。
-     * UART 段已有 CRC16+ACK、存储写出错会返回错误，二者都不会静默损坏；
-     * 只有 WiFi 上传或存储落地环节可能污染体部而保留向量表，这里能拦住，
-     * 避免“下载成功、校验通过”却被拷成坏固件导致跳转黑屏。 */
     {
-        uint32_t crc = 0xFFFFFFFFU;
-        uint32_t rd = 0U;
-        uint32_t rem = orig_total;
-        while (rem > 0U) {
-            uint32_t rl = (rem > sizeof(buf)) ? sizeof(buf) : rem;
-            Watchdog_Kick();
-            if (W25Q128_Read(FIRMWARE_TEMP_ADDR + rd, buf, rl) != W25Q128_OK) return -1;
-            for (uint32_t i = 0; i < rl; i++) {
-                crc ^= buf[i];
-                for (uint8_t j = 0; j < 8; j++)
-                    crc = (crc >> 1) ^ (0xEDB88320U & -(crc & 1));
-            }
-            rd += rl;
-            rem -= rl;
-        }
-        if ((~crc) != fw_crc) {
-            g_dbg_crc_calc = ~crc;      /* 计算值 */
-            g_dbg_crc_exp  = fw_crc;    /* ESP 上报期望值 */
-            g_dbg_crc_len  = orig_total;
-            return -1;   /* CRC 不匹配：固件在传输/存储中损坏，拒绝引导 */
-        }
+        uint8_t vt[8];
+        Flash_Read(APP_ADDR, vt, sizeof(vt));
+        uint32_t sp = (uint32_t)vt[0] | ((uint32_t)vt[1] << 8) |
+                      ((uint32_t)vt[2] << 16) | ((uint32_t)vt[3] << 24);
+        uint32_t pc = (uint32_t)vt[4] | ((uint32_t)vt[5] << 8) |
+                      ((uint32_t)vt[6] << 16) | ((uint32_t)vt[7] << 24);
+        if ((sp & 0x2FFE0000) != 0x20000000) return -1;
+        if ((pc & 0xFF000000) != 0x08000000) return -1;
+        if (pc < APP_ADDR || pc >= APP_ADDR + APP_SIZE) return -1;
     }
-    return 0;
-}
-
-static int flash_staged_to_app(void)
-{
-    uint8_t buf[FLASH_CHUNK];
-    uint32_t offset = 0U;
-    uint8_t last_pct = 0;
-
-    /* 固件大小不超过 APP 分区（尾部可能含 multipart 元数据，截断到 APP_SIZE） */
-    if (fw_total > APP_SIZE) fw_total = APP_SIZE;
-
-    if (erase_app_area_with_progress() != 0) return -1;
-    while (offset < fw_total) {
-        uint32_t length = fw_total - offset;
-        if (length > sizeof(buf)) length = sizeof(buf);
-        Watchdog_Kick();
-        if (W25Q128_Read(FIRMWARE_TEMP_ADDR + fw_start + offset, buf, length) != W25Q128_OK) return -1;
-        if (Flash_Write(APP_ADDR + offset, buf, length) != 0) return -1;
-        offset += length;
-        /* 拷贝进度：每 10% 刷新一次 */
-        uint8_t pct = (uint8_t)(offset * 100U / fw_total);
-        if (pct != last_pct && (pct % 10) == 0) {
-            last_pct = pct;
-            BL_TFT_ShowProgressBar(pct);
-        }
-    }
-    BL_TFT_ShowProgressBar(100);
     return 0;
 }
 
@@ -220,12 +127,6 @@ void BootloaderV2_Run(void)
     if (have_flag && flag.status == UPGRADE_STATUS_FORCE_BOOT) {
         UpgradeFlag_Clear();
         BootloaderV2_EnterUpgradeMode();
-    }
-
-    /* 阶段2：检测到 DOWNLOADED → 拷贝模式（刷写 APP，显示进度），不碰 ESP。
-     * 下载阶段完成时已写 flag（含 firmware_size/crc），重启后直接刷写。 */
-    if (have_flag && flag.status == UPGRADE_STATUS_DOWNLOADED) {
-        BootloaderV2_EnterCopyMode(&flag);
     }
 
     /* 板级初始化（GPIO、JTAG 等），放在 App 验证之后避免影响 Flash 读取 */
@@ -254,258 +155,17 @@ void BootloaderV2_Run(void)
     }
 }
 
-void BootloaderV2_EnterCopyMode(UpgradeFlag_t *flag)
-{
-    /* 拷贝模式不需要 ESP 联网：先初始化 SPI1（W25Q128_Init 会调用 Spi1Bus_Init），
-     * 否则 BL_TFT_Init / verify_staged_image 的 SPI 操作都不工作 → 黑屏。 */
-    W25Q128_SetServiceCallback(Watchdog_Kick);
-    W25Q128_Init();
-
-    /* 关闭 ESP01S 电源（P-MOS 高=关断）。注意：必须先初始化 ESP_EN 引脚为输出，
-     * 否则 GPIO_SetBits 无效；EspUart_Init 会配置该引脚及 USART1。 */
-    EspUart_Init();
-
-    /* PA9（UART TX）改推挽输出低电平，主动拉低 ESP RX 引脚，
-     * 克服 ESP 内部上拉电阻（40-50kΩ 到 VCC）导致的回灌供电。
-     * 仅输入浮空不够，ESP 内部上拉会通过 RX 引脚向 VCC 灌电。 */
-    {
-        GPIO_InitTypeDef gpio;
-        gpio.GPIO_Pin = PIN_ESP_TX_PIN;
-        gpio.GPIO_Mode = GPIO_Mode_Out_PP;
-        gpio.GPIO_Speed = GPIO_Speed_2MHz;
-        GPIO_Init(PIN_ESP_TX_PORT, &gpio);
-        GPIO_ResetBits(PIN_ESP_TX_PORT, PIN_ESP_TX_PIN);
-    }
-
-    EspUart_SetEnabled(0);
-
-    /* 显示完整界面 + 标题 */
-    BL_TFT_Init();
-    BL_TFT_ShowUpgradeScreen();
-    {
-        const char *ip = BL_ESP01S_GetIP();
-        BL_TFT_ShowAPInfo("QiMingXing", "12345678", ip);
-    }
-    BL_TFT_ShowStatus("WRITE TO MCU");
-
-    /* 从 flag 读取固件大小和 CRC */
-    fw_total = flag->firmware_size;
-    fw_crc = flag->firmware_crc32;
-
-    /* 校验外部 Flash 固件 */
-    if (verify_staged_image() != 0) {
-        BL_TFT_ShowError("Verify Failed!");
-        UpgradeFlag_Clear();
-        for (;;) Watchdog_Kick();
-    }
-
-    /* 刷写 APP（内部实现更新进度条） */
-    if (flash_staged_to_app() == 0 && BootloaderV2_VerifyFirmware() == 0) {
-        BL_TFT_ShowStatus("UPDATE OK!");
-        UpgradeFlag_Clear();
-        Delay_ms(2000);
-        NVIC_SystemReset();
-    }
-
-    BL_TFT_ShowError("Copy Failed!");
-    UpgradeFlag_Clear();
-    for (;;) Watchdog_Kick();
-}
-
 void BootloaderV2_EnterUpgradeMode(void)
 {
     int retry;
-    int flash_ok = 0;
 
     /* ── 先初始化屏幕（SPI1 + TFT），再操作 ESP ─────────────
      * ESP_WaitReady 是阻塞握手，若 ESP 异常会卡住；屏幕必须在此之前就绪，
      * 否则永远黑屏、无法显示升级界面。 */
     W25Q128_SetServiceCallback(Watchdog_Kick);
-    if (W25Q128_Init() == W25Q128_OK) {
-        flash_ok = 1;
-    }
+    W25Q128_Init();
     BL_TFT_Init();
     BL_TFT_ShowUpgradeScreen();
-
-    /* 诊断：直接操作 SPI，完整 WREN→擦除→写入→回读 测试 */
-    if (flash_ok) {
-        uint8_t sr1 = 0xFF;
-        char buf[24];
-        uint8_t i;
-        uint8_t rd[16];
-
-        /* ── 测试1：WREN ── */
-        GPIO_ResetBits(GPIOA, GPIO_Pin_15);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-        SPI_I2S_SendData(SPI1, 0x06);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-        (void)SPI_I2S_ReceiveData(SPI1);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY) == SET) {}
-        GPIO_SetBits(GPIOA, GPIO_Pin_15);
-
-        /* 读 SR1 确认 WEL=1 */
-        GPIO_ResetBits(GPIOA, GPIO_Pin_15);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-        SPI_I2S_SendData(SPI1, 0x05);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-        (void)SPI_I2S_ReceiveData(SPI1);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-        SPI_I2S_SendData(SPI1, 0xFF);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-        sr1 = (uint8_t)SPI_I2S_ReceiveData(SPI1);
-        GPIO_SetBits(GPIOA, GPIO_Pin_15);
-
-        sprintf(buf, "1.WREN SR1=%02X", sr1);
-        BL_TFT_ShowStatus(buf);
-        Delay_ms(3000);
-
-        /* ── 测试2：Sector Erase 0x000000 ── */
-        /* WREN */
-        GPIO_ResetBits(GPIOA, GPIO_Pin_15);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-        SPI_I2S_SendData(SPI1, 0x06);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-        (void)SPI_I2S_ReceiveData(SPI1);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY) == SET) {}
-        GPIO_SetBits(GPIOA, GPIO_Pin_15);
-
-        /* Sector Erase 0x20 + addr 0x000000 */
-        GPIO_ResetBits(GPIOA, GPIO_Pin_15);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-        SPI_I2S_SendData(SPI1, 0x20);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-        (void)SPI_I2S_ReceiveData(SPI1);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-        SPI_I2S_SendData(SPI1, 0x00);  /* addr[23:16] */
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-        (void)SPI_I2S_ReceiveData(SPI1);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-        SPI_I2S_SendData(SPI1, 0x00);  /* addr[15:8] */
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-        (void)SPI_I2S_ReceiveData(SPI1);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-        SPI_I2S_SendData(SPI1, 0x00);  /* addr[7:0] */
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-        (void)SPI_I2S_ReceiveData(SPI1);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY) == SET) {}
-        GPIO_SetBits(GPIOA, GPIO_Pin_15);
-
-        /* 等待 WIP=0 */
-        {
-            uint32_t timeout = 4000;
-            uint8_t busy = 1;
-            while (timeout-- > 0) {
-                GPIO_ResetBits(GPIOA, GPIO_Pin_15);
-                while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-                SPI_I2S_SendData(SPI1, 0x05);
-                while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-                (void)SPI_I2S_ReceiveData(SPI1);
-                while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-                SPI_I2S_SendData(SPI1, 0xFF);
-                while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-                sr1 = (uint8_t)SPI_I2S_ReceiveData(SPI1);
-                GPIO_SetBits(GPIOA, GPIO_Pin_15);
-                if ((sr1 & 0x01) == 0) { busy = 0; break; }
-                Delay_ms(1);
-            }
-            sprintf(buf, "2.ERASE %s SR=%02X", busy ? "TMO" : "OK", sr1);
-            BL_TFT_ShowStatus(buf);
-            Delay_ms(3000);
-        }
-
-        /* ── 测试3：Page Program 16 字节到 0x000000 ── */
-        /* WREN */
-        GPIO_ResetBits(GPIOA, GPIO_Pin_15);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-        SPI_I2S_SendData(SPI1, 0x06);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-        (void)SPI_I2S_ReceiveData(SPI1);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY) == SET) {}
-        GPIO_SetBits(GPIOA, GPIO_Pin_15);
-
-        /* Page Program 0x02 + addr 0x000000 + 16 bytes */
-        GPIO_ResetBits(GPIOA, GPIO_Pin_15);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-        SPI_I2S_SendData(SPI1, 0x02);  /* PP */
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-        (void)SPI_I2S_ReceiveData(SPI1);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-        SPI_I2S_SendData(SPI1, 0x00);  /* addr[23:16] */
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-        (void)SPI_I2S_ReceiveData(SPI1);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-        SPI_I2S_SendData(SPI1, 0x00);  /* addr[15:8] */
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-        (void)SPI_I2S_ReceiveData(SPI1);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-        SPI_I2S_SendData(SPI1, 0x00);  /* addr[7:0] */
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-        (void)SPI_I2S_ReceiveData(SPI1);
-        /* 16 bytes data: 0xAA,0x55,0xAA,0x55,... */
-        for (i = 0; i < 16; i++) {
-            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-            SPI_I2S_SendData(SPI1, (i & 1) ? 0x55 : 0xAA);
-            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-            (void)SPI_I2S_ReceiveData(SPI1);
-        }
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_BSY) == SET) {}
-        GPIO_SetBits(GPIOA, GPIO_Pin_15);
-
-        /* 等待 WIP=0 */
-        {
-            uint32_t timeout = 100;
-            while (timeout-- > 0) {
-                GPIO_ResetBits(GPIOA, GPIO_Pin_15);
-                while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-                SPI_I2S_SendData(SPI1, 0x05);
-                while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-                (void)SPI_I2S_ReceiveData(SPI1);
-                while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-                SPI_I2S_SendData(SPI1, 0xFF);
-                while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-                sr1 = (uint8_t)SPI_I2S_ReceiveData(SPI1);
-                GPIO_SetBits(GPIOA, GPIO_Pin_15);
-                if ((sr1 & 0x01) == 0) break;
-                Delay_ms(1);
-            }
-        }
-
-        /* 读取回 16 字节 */
-        GPIO_ResetBits(GPIOA, GPIO_Pin_15);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-        SPI_I2S_SendData(SPI1, 0x03);  /* Read Data */
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-        (void)SPI_I2S_ReceiveData(SPI1);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-        SPI_I2S_SendData(SPI1, 0x00);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-        (void)SPI_I2S_ReceiveData(SPI1);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-        SPI_I2S_SendData(SPI1, 0x00);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-        (void)SPI_I2S_ReceiveData(SPI1);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-        SPI_I2S_SendData(SPI1, 0x00);
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-        (void)SPI_I2S_ReceiveData(SPI1);
-        for (i = 0; i < 16; i++) {
-            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET) {}
-            SPI_I2S_SendData(SPI1, 0xFF);
-            while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET) {}
-            rd[i] = (uint8_t)SPI_I2S_ReceiveData(SPI1);
-        }
-        GPIO_SetBits(GPIOA, GPIO_Pin_15);
-
-        sprintf(buf, "3.WR B0=%02X B1=%02X", rd[0], rd[1]);
-        BL_TFT_ShowStatus(buf);
-        Delay_ms(3000);
-        sprintf(buf, "  B2=%02X B3=%02X", rd[2], rd[3]);
-        BL_TFT_ShowStatus(buf);
-        Delay_ms(3000);
-        sprintf(buf, "OK=%s", (rd[0]==0xAA && rd[1]==0x55) ? "YES" : "NO");
-        BL_TFT_ShowStatus(buf);
-        Delay_ms(3000);
-    }
 
     /* 初始化 ESP 串口并上电（P-MOS: 低=开）。OTA 触发放在重试循环内，
      * 失败后重试，避免 ESP 启动慢导致一次就失败。 */
@@ -516,8 +176,11 @@ void BootloaderV2_EnterUpgradeMode(void)
         fw_total = 0;
         fw_crc = 0;
 
-        if (flash_ok && (stage_erase() != 0)) {
-            flash_ok = 0;
+        if (stage_erase() != 0) {
+            /* 内部 App 区擦除失败：后续写入无意义，直接重试 */
+            BL_ESP01S_ResetTransfer();
+            BL_TFT_ShowStatus("WAIT");
+            continue;
         }
 
         BL_ESP01S_ResetTransfer();
@@ -535,7 +198,7 @@ void BootloaderV2_EnterUpgradeMode(void)
             const char *ip = BL_ESP01S_GetIP();
             BL_TFT_ShowAPInfo("QiMingXing", "12345678", ip);
         }
-        BL_TFT_ShowStatus("DOWNLOAD TO QFLASH");
+        BL_TFT_ShowStatus("DOWNLOAD TO FLASH");
 
         uint32_t last_watchdog = SystemTime_Millis();
         uint32_t last_progress_tick = 0;
@@ -608,66 +271,29 @@ void BootloaderV2_EnterUpgradeMode(void)
             continue;
         }
 
-        /* 上传完成：从 bl_esp01s 重新读取真实固件大小（multipart 剥离后的大小） */
+        /* 上传完成：从 bl_esp01s 重新读取真实固件大小 */
         fw_total = BL_ESP01S_GetTotalSize();
         fw_crc = BL_ESP01S_GetFirmwareCrc32();
 
         BL_TFT_ShowStatus("DOWNLOAD OK");
         Watchdog_Kick();
 
-        if (verify_staged_image() == 0) {
-            /* 下载完成：显示完整界面 + 进度 100%，写入升级标志后复位。
-             * 重启后进入拷贝阶段（刷写 APP，显示拷贝进度）。 */
+        if (verify_app_downloaded() == 0) {
+            /* 固件已直写入内部 App 分区且校验通过：关闭网页，复位重启，
+             * 重启后 Bootloader 验证 App 有效即跳转。不再走外部 Flash 拷贝流程。 */
             BL_TFT_ShowUpgradeScreen();
             BL_TFT_ShowProgressBar(100);
             BL_TFT_ShowStatus("Download OK");
             Watchdog_Kick();
 
-            UpgradeFlag_t uf;
-            memset(&uf, 0, sizeof(uf));
-            uf.magic = UPGRADE_MAGIC;
-            uf.version = 0x00020000;
-            uf.status = UPGRADE_STATUS_DOWNLOADED;
-            uf.firmware_size = fw_total;
-            uf.firmware_crc32 = fw_crc;
-            uf.target_addr = APP_ADDR;
-            uf.timestamp = SystemTime_Millis();
-            UpgradeFlag_Write(&uf);
-            UpgradeFlag_WriteExt(&uf);
-
-            /* 固件已收完：由单片机主动让 ESP 进入休眠（AT+OTACLOSE），
-             * 关闭网页/AP 进入低功耗，而不是让 ESP 自己决定。失败也无害，
-             * 拷贝阶段会硬断电 ESP。 */
             BL_ESP01S_CloseWeb();
-
             BL_TFT_ShowStatus("Restarting...");
             Delay_ms(2000);
             NVIC_SystemReset();
             return;
         } else {
-            /* 校验失败诊断：重算 CRC 两次比对读稳定性；EXP=期望 GOT=计算值。
-             * 若两次重算不同 → 读不稳定（SPI 读路径问题）；
-             * 若相同但与 EXP 不同 → 确为写坏（或存储落地损坏）。 */
-            uint32_t crcA = g_dbg_crc_calc;
-            uint32_t crcB = staged_crc_recompute(g_dbg_crc_len);
-            uint32_t clen = BL_ESP01S_GetTotalFirmwareSize();
-            uint32_t got  = BL_ESP01S_GetReceivedSize();
-            char buf[32];
-            if (crcA != crcB) {
-                sprintf(buf, "RD UNSTABLE");
-                BL_TFT_ShowStatus(buf);
-            } else {
-                sprintf(buf, "EXP%08X", (unsigned int)g_dbg_crc_exp);
-                BL_TFT_ShowStatus(buf);
-            }
+            BL_TFT_ShowError("Verify Failed!");
             Delay_ms(2500);
-            if (crcA != crcB) {
-                BL_TFT_ShowError("Verify Failed!");
-            } else {
-                sprintf(buf, "GOT%08X L%lu", (unsigned int)crcA, (unsigned long)clen);
-                BL_TFT_ShowError(buf);
-            }
-            Delay_ms(3500);
             if (retry < MAX_RETRY - 1) {
                 BL_TFT_ShowStatus("Retrying...");
                 Delay_ms(1500);

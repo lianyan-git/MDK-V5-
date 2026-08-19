@@ -2,6 +2,7 @@
 #include "bl_tft.h"
 #include "bsp_esp_uart.h"
 #include "bsp_w25q128.h"
+#include "flash_ops.h"
 #include "board.h"
 #include "shared_defs.h"
 #include "pin_config.h"
@@ -43,13 +44,13 @@
 
 static const char *ap_ip = "192.168.4.1";
 
-/* 写 Flash 缓冲（按 256 字节页写入 W25Q128） */
+/* 写内部 Flash 缓冲（按 256 字节页写入内部 App 分区） */
 static uint8_t  fw_buffer[FW_BUF_SIZE];
 static uint16_t fw_buf_idx = 0;
 
 static uint32_t fw_received = 0;
 static uint32_t fw_total = 0;
-static uint32_t fw_write_addr = FIRMWARE_TEMP_ADDR;
+static uint32_t fw_write_addr = APP_ADDR;
 static uint32_t fw_crc32 = 0xFFFFFFFFU;   /* 运行中的 CRC32（最终取反） */
 
 static int transfer_state = 0;
@@ -170,7 +171,7 @@ void BL_ESP01S_ResetTransfer(void)
 {
     fw_received = 0;
     fw_total = 0;
-    fw_write_addr = FIRMWARE_TEMP_ADDR;
+    fw_write_addr = APP_ADDR;
     fw_crc32 = 0xFFFFFFFFU;
     fw_buf_idx = 0;
     transfer_state = 0;
@@ -201,22 +202,19 @@ static void send_byte(uint8_t b)
     EspUart_Write(&b, 1, 1000);
 }
 
+/* OTA 数据包校验通过后，直接写入内部 App 分区（已先整区擦除）。 */
 static void flush_fw_buffer(void)
 {
     if (fw_buf_idx > 0) {
-        int ok = 0;
-        if (W25Q128_Write(fw_write_addr, fw_buffer, fw_buf_idx) == W25Q128_OK) {
-            uint8_t rb[FW_BUF_SIZE];
-            if (W25Q128_Read(fw_write_addr, rb, fw_buf_idx) == W25Q128_OK) {
-                ok = 1;
-                for (uint16_t i = 0; i < fw_buf_idx; i++) {
-                    if (rb[i] != fw_buffer[i]) { ok = 0; break; }
-                }
-            }
+        /* 防越界：写入不得超出 App 分区 */
+        if ((uint32_t)(fw_write_addr - APP_ADDR) + fw_buf_idx > APP_SIZE) {
+            transfer_error = 1;
+            fw_buf_idx = 0;
+            BL_TFT_ShowStatus("SIZE ERR");
+            return;
         }
-        if (!ok) {
-            /* 写后回读不一致：标记传输错误，放弃本次上传。
-             * 下一次重试会由 stage_erase() 重新擦除整块临时区后重写，避免中途擦扇区破坏已写数据。 */
+        /* 内部 Flash 写入已由 stage_erase() 整区擦除保证可编程；写失败即终止传输 */
+        if (Flash_Write(fw_write_addr, fw_buffer, fw_buf_idx) != 0) {
             transfer_error = 1;
             fw_buf_idx = 0;
             BL_TFT_ShowStatus("WERR");
@@ -270,9 +268,13 @@ static void feed_ota_byte(uint8_t b)
         if (size_idx == 4) {
             fw_total = ((uint32_t)size_buf[0] << 24) | ((uint32_t)size_buf[1] << 16) |
                        ((uint32_t)size_buf[2] << 8)  | (uint32_t)size_buf[3];
+            if (fw_total == 0 || fw_total > APP_SIZE) {
+                transfer_error = 1;   /* 大小非法：直接拒绝，防止越界写内部 Flash */
+                break;
+            }
             /* 复位写入上下文 */
             fw_received = 0;
-            fw_write_addr = FIRMWARE_TEMP_ADDR;
+            fw_write_addr = APP_ADDR;
             fw_crc32 = 0xFFFFFFFFU;
             exp_seq = 0;
             pkt_len = 0;

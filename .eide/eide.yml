@@ -173,6 +173,7 @@ targets:
       defineList:
         - STM32F10X_MD
         - USE_STDPERIPH_DRIVER
+        - VECT_TAB_OFFSET=0x5000
       incList:
         - .
         - ../../app

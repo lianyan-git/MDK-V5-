@@ -6,7 +6,6 @@
 
 void BootloaderV2_Run(void);
 void BootloaderV2_EnterUpgradeMode(void);
-void BootloaderV2_EnterCopyMode(UpgradeFlag_t *flag);
 int BootloaderV2_WriteFirmware(uint32_t offset, uint8_t *data, uint16_t len);
 int BootloaderV2_VerifyFirmware(void);
 int BootloaderV2_VerifyApp(void);
