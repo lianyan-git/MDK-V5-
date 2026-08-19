@@ -52,12 +52,12 @@ TARGETS = {
         ),
     },
     "APP": {
-        "start": "0x08003800",
-        "size": "0x0000C800",
+        "start": "0x08003400",
+        "size": "0x0000CC00",
         "output": "dryer_app",
         "entry_name": "main.c",
         "entry_path": r"..\..\app\main.c",
-        "defines": "STM32F10X_MD,USE_STDPERIPH_DRIVER,VECT_TAB_OFFSET=0x3800",
+        "defines": "STM32F10X_MD,USE_STDPERIPH_DRIVER,VECT_TAB_OFFSET=0x3400",
         "sources": (
             ("App", "system_config.c", 1, r"..\..\app\system_config.c"),
             ("App", "ui_manager.c", 1, r"..\..\app\ui_manager.c"),
