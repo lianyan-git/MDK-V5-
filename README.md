@@ -139,7 +139,7 @@ ESP_SendCmd("AT+OTAAP", "OK", 800);
 
 ## OTA 升级流程
 
-> OTA 链路采用 **自定义二进制串口协议**（非浏览器直传）：网页/HTTP 解析全部由 ESP-01S 完成，STM32 只在 UART 上按 1 KiB/包的二进制协议收固件并写入外部 Flash，因此即使 STM32 仅 20 KB RAM 也能稳定升级。
+> OTA 链路采用 **自定义二进制串口协议**（非浏览器直传）：网页/HTTP 解析全部由 ESP-01S 完成，STM32 只在 UART 上按 1 KiB/包的二进制协议收固件并**直写内部 App 分区**，因此即使 STM32 仅 20 KB RAM 也能稳定升级。
 
 ### 进入升级模式
 
@@ -220,6 +220,13 @@ A: 确认背光引脚（PB0）配置为推挽输出并置高。若硬件上背�
 - **FSM 容错**：`S_PKT_AA`/`S_PKT_TAIL` 对噪声/残串忽略而非置错；握手后 20s 无完整包超时中止重试，不再死等
 - **进度条差分刷新**：每 1% 只画 2~3px 增量（40ms 节流），文字不动，人眼不可见刷新
 - **SPI1 频率 36 MHz**（`SPI_BaudRatePrescaler_2`，F103 极限）
+
+#### 修复（按键进菜单 + UI 闪烁）— 8 月 19 日测试正常版
+- **App 启用全局中断**：Bootloader 在 `BootloaderV2_JumpToApp()` 跳转前调用 `__disable_irq()`，而 App 的 `SystemInit`/`main` 从不重新开中断 → `PRIMASK` 保持 1 → SysTick 永不触发 → `SystemTime_Millis()` 冻结 → 编码器**单击/长按**（依赖 millis 计时）全部失效（旋转仍可用，因其只轮询 GPIO）。`main.c` 在 `SystemTime_Init()` 后新增 `__enable_irq()`，恢复 SysTick 走时 → 长按 1s 进菜单、单击导航均恢复。
+- **上电强制下载窗口**：原代码先 `Encoder_Process()`（内部消费事件）再 `Encoder_GetEvent()`，永远拿不到 `LONG_PRESS`；改为直接轮询 PB5 引脚，强制进 Bootloader 真正可用。
+- **主界面时间栏闪烁**：`UI_UpdateMainDynamic()` 原每 50ms 无条件重绘底部时间文字，`TFT_DrawChar` 先填字符格背景再画前景 → 直接写 GRAM 无双缓冲撕裂闪；改为仅当时间字符串变化时重绘（值未变不画），REM 倒计时同理 gating 并在退出烘干时清残留行。
+- **菜单旋转无效**：`UI_Update()` 同屏动态分支无 `SCREEN_MENU`，旋转改 `selected_item` 后不重绘；新增 `SCREEN_MENU` 局部分支 + `UI_RefreshMenuSel(old,new)` 只重绘旧/新两行（不整屏刷新），旋转即可移动选中项。
+- 顺带：ESP-01S 握手 ACK 等待 3s→10s，覆盖 STM32 擦除 App 分区（约 2s）耗时（详见 `QiMingXing-ESP01S` 仓库）。
 
 ### 2026-08-16
 

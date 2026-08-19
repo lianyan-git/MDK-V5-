@@ -105,24 +105,34 @@ int main(void)
     Watchdog_Init();   /* App 自启看门狗，不依赖 Bootloader */
 
     /* 关键：从 RCC 读回实际时钟，纠正 SystemCoreClock（与 bootloader 一致）。
-     * 否则 SysTick 周期错，SystemTime_Millis 不走，长按检测循环死等。 */
+     * 否则 SysTick 周期错，SystemTime_Millis 不走。 */
     SystemCoreClockUpdate();
     SystemTime_Init(); /* 启动 SysTick，供 SystemTime_Millis/Encoder 计时 */
 
+    /* Bootloader 在 BootloaderV2_JumpToApp() 跳转前调用了 __disable_irq()，
+     * 而 App 的 SystemInit/main 从不重新开中断 → PRIMASK 保持 1 → SysTick
+     * 永不触发 → SystemTime_Millis 冻结 → 编码器单击/长按计时全部失效
+     * （旋转仍可用，因其只轮询 GPIO 不依赖中断）。此处必须重新开中断。 */
+    __enable_irq();
+
     /* 上电长按编码器(约1s) → 强制进入 Bootloader 下载模式。
-     * 带独立计数保护：即使 SystemTime 异常也能退出，不阻塞屏幕初始化。 */
+     * 直接轮询按钮引脚，不依赖 Encoder_Process()（它内部会消费事件，
+     * 导致这里再调 Encoder_GetEvent() 永远拿不到 LONG_PRESS）。 */
     {
         Encoder_Init();
         int force_boot = 0;
         uint32_t t0 = SystemTime_Millis();
-        uint32_t guard = 0;
-        while ((int32_t)(SystemTime_Millis() - t0) < 3000 && guard < 300000U) {
-            guard++;
+        uint32_t btn_t0 = 0;
+        while ((int32_t)(SystemTime_Millis() - t0) < 3000) {
             Watchdog_Kick();
-            Encoder_Process();
-            if (Encoder_GetEvent() == ENC_EVT_LONG_PRESS) {
-                force_boot = 1;
-                break;
+            if (GPIO_ReadInputDataBit(PIN_ENC_BTN_PORT, PIN_ENC_BTN_PIN) == 0) {
+                if (btn_t0 == 0) btn_t0 = SystemTime_Millis();
+                else if ((int32_t)(SystemTime_Millis() - btn_t0) >= 1000) {
+                    force_boot = 1;
+                    break;
+                }
+            } else {
+                btn_t0 = 0;
             }
         }
         if (force_boot) {

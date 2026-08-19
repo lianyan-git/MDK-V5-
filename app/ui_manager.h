@@ -17,6 +17,7 @@ void UI_DrawPtcEdit(void);
 void UI_DrawPtcCoolingEdit(void);
 void UI_DrawPidAutotune(void);
 void UI_DrawMenu(void);
+void UI_RefreshMenuSel(uint8_t old_idx, uint8_t new_idx);
 void UI_DrawMotorAdjust(void);
 void UI_DrawMotorEdit(void);
 void UI_DrawAbout(void);
