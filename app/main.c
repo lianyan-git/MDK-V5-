@@ -85,7 +85,7 @@ int main(void)
     g_sys.current_screen = SCREEN_MAIN;
     g_sys.selected_item = 0;
     g_sys.submenu_active = 0;
-    g_sys.time_cursor = TIME_FIELD_HOUR;
+    g_sys.time_cursor = TIME_DIGIT_H1;
     g_sys.temp_edit_active = 0;
     g_sys.ptc_edit_active = 0;
     g_sys.pid_autotune_running = 0;
@@ -142,6 +142,17 @@ int main(void)
 
     /* 屏幕初始化 + 主界面 */
     TFT_Init();
+    Buzzer_Init();
+    Backlight_Init();
+
+    g_sys.buzzer_link = 1;
+    g_sys.buzzer_vol = 5;
+    g_sys.light_switch = 1;
+    g_sys.backlight = 100;
+    g_sys.theme = 0;
+    TFT_SetBrightness(g_sys.backlight);
+    theme_apply();
+
     UI_ShowBootScreen();
     UI_DrawMainScreen();
 
@@ -151,6 +162,7 @@ int main(void)
         uint32_t btn_press_ms = 0;
         uint8_t  btn_was_down = 0;
         uint8_t  btn_long_done = 0;
+        Screen_t btn_press_screen = (Screen_t)0xFF;
         uint8_t  last_sel = 0xFF;
         for (;;) {
             now = SystemTime_Millis();
@@ -158,23 +170,29 @@ int main(void)
 
             {
                 uint8_t old_sel = last_sel;
-                Encoder_Process();   /* 旋转/单击由内部状态机处理 */
+                Encoder_Process();   /* 旋转/单击/长按由内部状态机处理 */
                 if (g_sys.current_screen == SCREEN_MAIN && last_sel != 0xFF
                     && g_sys.selected_item != last_sel) {
-                    /* SGL 脏矩形局部刷新：只重绘旧/新两张卡片，不整屏重绘 */
                     UI_RefreshCard(old_sel);
                     UI_RefreshCard(g_sys.selected_item);
                 }
                 last_sel = g_sys.selected_item;
             }
 
-            /* 独立长按检测：按钮按下持续 1s → 进菜单（与 bootloader 长按区分：这里不写标志） */
+            /* 独立长按检测：主界面/菜单之间切换（湿度卡上长按由编码器处理烘干，不进菜单） */
             if (GPIO_ReadInputDataBit(PIN_ENC_BTN_PORT, PIN_ENC_BTN_PIN) == 0) {
-                if (!btn_was_down) { btn_press_ms = now; btn_was_down = 1; btn_long_done = 0; }
-                else if (!btn_long_done && (int32_t)(now - btn_press_ms) >= 1000) {
+                if (!btn_was_down) {
+                    btn_press_ms = now;
+                    btn_was_down = 1;
+                    btn_long_done = 0;
+                    btn_press_screen = g_sys.current_screen;
+                } else if (!btn_long_done && (int32_t)(now - btn_press_ms) >= 1000) {
                     btn_long_done = 1;
-                    if (g_sys.current_screen == SCREEN_MAIN) g_sys.current_screen = SCREEN_MENU;
-                    else g_sys.current_screen = SCREEN_MAIN;
+                    if (btn_press_screen == SCREEN_MAIN && g_sys.selected_item != 1) {
+                        g_sys.current_screen = SCREEN_MENU;
+                    } else if (btn_press_screen == SCREEN_MENU) {
+                        g_sys.current_screen = SCREEN_MAIN;
+                    }
                 }
             } else {
                 btn_was_down = 0;
@@ -299,6 +317,32 @@ void StopDrying(void)
     Stepper_Enable(0);
 }
 
+void PauseDrying(void)
+{
+    if (g_sys.run_state != STATE_HEATING && g_sys.run_state != STATE_DRYING) return;
+    g_sys.run_state = STATE_PAUSED;
+    PTC_SetPower(0);
+    Fan_SetSpeed(30);
+    Stepper_Enable(0);
+}
+
+void ResumeDrying(void)
+{
+    if (g_sys.run_state != STATE_PAUSED) return;
+    g_sys.drying_active = 1;
+    g_sys.temp_stuck_start = SystemTime_Millis();
+    g_sys.chamber_temp_last = g_sys.current_temp;
+    g_sys.run_state = (g_sys.current_temp < (float)g_sys.params.target_temp - 1.0f)
+                      ? STATE_HEATING : STATE_DRYING;
+    Fan_SetSpeed(30);
+    if (g_sys.params.motor_enabled) {
+        Stepper_Enable(1);
+        Stepper_SetSpeed(g_sys.params.motor_speed * 200);
+        if (g_sys.params.motor_oscillate) Stepper_SetOscillate(g_sys.params.motor_oscillate_angle * 10);
+        else Stepper_Move(g_sys.params.motor_direction ? -100000 : 100000);
+    }
+}
+
 static void safety_check(void)
 {
     uint32_t now = SystemTime_Millis();
@@ -363,6 +407,9 @@ static void control_update(void)
     case STATE_COOLING:
         Fan_SetSpeed(100);
         if (g_sys.ptc_temp <= (float)g_sys.params.ptc_cooling_temp) { g_sys.run_state = STATE_COMPLETE; Fan_Off(); }
+        break;
+    case STATE_PAUSED:
+        PTC_SetPower(0);
         break;
     default: break;
     }

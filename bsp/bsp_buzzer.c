@@ -1,6 +1,7 @@
 #ifndef BOOTLOADER_BUILD
 #include "bsp_buzzer.h"
 #include "pin_config.h"
+#include "system_config.h"
 #include "stm32f10x.h"
 
 void Buzzer_Init(void)
@@ -32,10 +33,17 @@ void Buzzer_Init(void)
 
 void Buzzer_Beep(uint16_t ms)
 {
-    TIM_SetCompare4(TIM3, 500);
+    uint16_t pulse = (uint16_t)((uint32_t)g_sys.buzzer_vol * 100U);
+    if (pulse > 999) pulse = 999;
+    TIM_SetCompare4(TIM3, pulse);
     volatile uint32_t delay = (uint32_t)ms * 7200;
     while (delay--) { __NOP(); }
     TIM_SetCompare4(TIM3, 0);
+}
+
+void Buzzer_SetVolume(uint8_t vol)
+{
+    g_sys.buzzer_vol = (vol > 10) ? 10 : vol;
 }
 
 void Buzzer_SetFreq(uint16_t freq)

@@ -11,32 +11,58 @@
 #define ACCENT_W       3
 #define SEL_FRAME_W    2
 #define BTN_Y          218
+/* ── 主题色（可运行时切换，变量替代 #define） ── */
+#define TFT_COLOR(r,g,b)  ((uint16_t)((((r)&0xF8)<<8)|(((g)&0xFC)<<3)|((b)>>3)))
+
+/* 亮色主题默认值 */
+static uint16_t UI_BG           = TFT_COLOR(0xE8, 0xEA, 0xED);
+static uint16_t UI_CARD         = TFT_COLOR(0xFF, 0xFF, 0xFF);
+static uint16_t UI_CARD_HI      = TFT_COLOR(0xF0, 0xF4, 0xFF);
+static uint16_t UI_TITLE_BG     = TFT_COLOR(0x00, 0x00, 0x00);
+static uint16_t CARD_BG_TEMP    = TFT_COLOR(0xFF, 0xF3, 0xE0);
+static uint16_t CARD_BG_HUMI    = TFT_COLOR(0xE1, 0xF5, 0xFE);
+static uint16_t CARD_BG_WEIGHT  = TFT_COLOR(0xF3, 0xE5, 0xF5);
+static uint16_t CARD_BG_PTC     = TFT_COLOR(0xFF, 0xEB, 0xEE);
+static uint16_t CARD_BG_TIME    = TFT_COLOR(0xE8, 0xF5, 0xE9);
+
+void theme_apply(void)
+{
+    if (g_sys.theme == 0) {  /* 亮色 */
+        UI_BG        = TFT_COLOR(0xE8, 0xEA, 0xED);
+        UI_CARD      = TFT_COLOR(0xFF, 0xFF, 0xFF);
+        UI_CARD_HI   = TFT_COLOR(0xF0, 0xF4, 0xFF);
+        UI_TITLE_BG  = TFT_COLOR(0x00, 0x00, 0x00);
+        CARD_BG_TEMP = TFT_COLOR(0xFF, 0xF3, 0xE0);
+        CARD_BG_HUMI = TFT_COLOR(0xE1, 0xF5, 0xFE);
+        CARD_BG_WEIGHT = TFT_COLOR(0xF3, 0xE5, 0xF5);
+        CARD_BG_PTC  = TFT_COLOR(0xFF, 0xEB, 0xEE);
+        CARD_BG_TIME = TFT_COLOR(0xE8, 0xF5, 0xE9);
+    } else {  /* 暗色 */
+        UI_BG        = TFT_COLOR(0x1E, 0x1E, 0x1E);
+        UI_CARD      = TFT_COLOR(0x2D, 0x2D, 0x2D);
+        UI_CARD_HI   = TFT_COLOR(0x38, 0x38, 0x38);
+        UI_TITLE_BG  = TFT_COLOR(0x0A, 0x0A, 0x0A);
+        CARD_BG_TEMP = TFT_COLOR(0x3E, 0x2D, 0x1A);
+        CARD_BG_HUMI = TFT_COLOR(0x1A, 0x2D, 0x3E);
+        CARD_BG_WEIGHT = TFT_COLOR(0x2D, 0x1A, 0x2D);
+        CARD_BG_PTC  = TFT_COLOR(0x3E, 0x1A, 0x1A);
+        CARD_BG_TIME = TFT_COLOR(0x1A, 0x3E, 0x1A);
+    }
+}
+
 #define BTN_H          18
 #define BTN_GAP        4
 
-/* ── 浅色主题（清新彩色风格） ── */
-#define UI_BG           TFT_COLOR(0xE8, 0xEA, 0xED)   /* 浅灰背景 */
-#define UI_CARD         TFT_COLOR(0xFF, 0xFF, 0xFF)   /* 白卡片 */
-#define UI_CARD_HI      TFT_COLOR(0xF0, 0xF4, 0xFF)   /* 选中高亮底 */
-#define UI_CARD_EDGE    TFT_COLOR(0xD0, 0xD0, 0xD0)   /* 卡片描边 */
-#define UI_TEXT         TFT_COLOR(0x22, 0x22, 0x22)   /* 深色文字 */
-#define UI_TEXT_DIM     TFT_COLOR(0x88, 0x88, 0x88)   /* 灰色文字 */
-#define UI_TITLE_BG     TFT_COLOR(0xE0, 0xE0, 0xE0)   /* 标题栏底 */
-#define UI_ACCENT       TFT_COLOR(0x21, 0x96, 0xF3)   /* 亮蓝 */
-#define UI_ACCENT2      TFT_COLOR(0xFF, 0x52, 0x52)   /* 珊瑚红 */
-#define UI_OK           TFT_COLOR(0x4C, 0xAF, 0x50)   /* 绿 */
-#define UI_WARN         TFT_COLOR(0xFF, 0xC1, 0x07)   /* 琥珀黄 */
-#define UI_CYAN         TFT_COLOR(0x00, 0xBC, 0xD4)   /* 青 */
-#define UI_PURPLE       TFT_COLOR(0x9C, 0x27, 0xB0)   /* 紫 */
-
-/* 各卡片背景色（浅色淡彩） */
-#define CARD_BG_TEMP    TFT_COLOR(0xFF, 0xF3, 0xE0)   /* 暖橙 */
-#define CARD_BG_HUMI    TFT_COLOR(0xE1, 0xF5, 0xFE)   /* 冷青 */
-#define CARD_BG_WEIGHT  TFT_COLOR(0xF3, 0xE5, 0xF5)   /* 紫 */
-#define CARD_BG_PTC     TFT_COLOR(0xFF, 0xEB, 0xEE)   /* 红 */
-#define CARD_BG_TIME    TFT_COLOR(0xE8, 0xF5, 0xE9)   /* 浅绿（区别于湿度蓝） */
-
-#define TFT_COLOR(r,g,b)  ((uint16_t)((((r)&0xF8)<<8)|(((g)&0xFC)<<3)|((b)>>3)))
+/* 非背景色保持常量 #define */
+#define UI_CARD_EDGE    TFT_COLOR(0xD0, 0xD0, 0xD0)
+#define UI_TEXT         TFT_COLOR(0x22, 0x22, 0x22)
+#define UI_TEXT_DIM     TFT_COLOR(0x88, 0x88, 0x88)
+#define UI_ACCENT       TFT_COLOR(0x21, 0x96, 0xF3)
+#define UI_ACCENT2      TFT_COLOR(0xFF, 0x52, 0x52)
+#define UI_OK           TFT_COLOR(0x4C, 0xAF, 0x50)
+#define UI_WARN         TFT_COLOR(0xFF, 0xC1, 0x07)
+#define UI_CYAN         TFT_COLOR(0x00, 0xBC, 0xD4)
+#define UI_PURPLE       TFT_COLOR(0x9C, 0x27, 0xB0)
 
 static void Delay_ms(uint16_t ms);
 
@@ -148,8 +174,20 @@ static void draw_card_pulse(uint16_t x, uint16_t y, uint16_t w, uint8_t selected
 static void draw_btn(uint16_t y, const char *label, uint16_t color, uint8_t selected)
 {
     TFT_FillRect(5, y, 125, BTN_H, UI_CARD);
-    TFT_DrawString(10, y + 3, label, color, COLOR_DARKGRAY, 1);
-    if (selected) draw_frame(5, y, 125, BTN_H, COLOR_WHITE);
+    TFT_DrawStringZh(10, y + 1, label, color, UI_CARD);
+    if (selected) draw_frame(5, y, 125, BTN_H, UI_ACCENT);
+}
+
+/* 绘制右侧滚动条：total_items=总数, per_page=每页可见数, cursor_pos=当前选中项索引 */
+static void draw_scrollbar(uint8_t total, uint8_t per_page, uint8_t cursor_pos, uint16_t sy, uint16_t sh)
+{
+    if (total <= per_page) return;
+    uint8_t thumb_h = (uint16_t)sh * per_page / total;
+    if (thumb_h > sh / 2) thumb_h = sh / 2;
+    if (thumb_h < 8) thumb_h = 8;
+    uint16_t thumb_y = sy + (uint16_t)sh * cursor_pos / (total - 1);
+    TFT_FillRect(234, sy, 5, sh, UI_CARD_EDGE);
+    TFT_FillRect(234, thumb_y, 5, thumb_h, UI_ACCENT);
 }
 
 static const uint16_t icon_temp_bmp[240] = {
@@ -343,10 +381,35 @@ static void draw_degree(uint16_t x, uint16_t y, uint16_t color, uint8_t scale)
 
 static void draw_degree(uint16_t x, uint16_t y, uint16_t color, uint8_t scale);
 
+/* 小时:分钟:秒 六位数字的 X 坐标（size 4，每个 24px） */
+static const uint16_t time_digit_x[6] = {20, 50, 94, 124, 168, 198};
+
+/* 局部重绘单个时间数字 + 光标框（框紧贴字模字形四面，无多余间隙） */
+static void refr_time_digit(uint8_t i, uint16_t txt_color, uint16_t border_color)
+{
+    char buf[8];
+    uint16_t dx = time_digit_x[i];
+    TFT_FillRect(dx - 1, 55, 22, 30, UI_BG);
+    sprintf(buf, "%d", g_sys.time_digits[i]);
+    TFT_DrawString(dx, 56, buf, txt_color, UI_BG, 4);
+    if (g_sys.time_cursor == i) draw_frame(dx - 1, 55, 22, 30, border_color);
+}
+
+/* 选项页右侧数值 + ℃，值右对齐到 x=190 前（避开左侧标签，消除重叠） */
+static void draw_val_deg(uint16_t y, const char *s, uint16_t color)
+{
+    uint8_t len = (uint8_t)strlen(s);
+    uint16_t vx = (uint16_t)(190U - (uint16_t)len * 12U);
+    TFT_FillRect(150, (uint16_t)(y - 1U), 70, 18, UI_BG);
+    TFT_DrawString(vx, y, s, color, UI_BG, 2);
+    draw_degree(192, y, color, 1);
+    TFT_DrawString(200, y, "C", color, UI_BG, 2);
+}
+
 static void draw_card_bg(uint16_t y, uint16_t accent_color)
 {
     TFT_FillRect(0, y, ACCENT_W, CARD_H, accent_color);
-    TFT_FillRect(ACCENT_W, y, TFT_WIDTH - ACCENT_W, CARD_H, COLOR_BLACK);
+    TFT_FillRect(ACCENT_W, y, TFT_WIDTH - ACCENT_W, CARD_H, UI_BG);
 }
 
 /* 横屏卡片背景（可指定坐标/尺寸），sgl 风格：深色卡片 + 顶边高亮 */
@@ -394,6 +457,26 @@ static void draw_page_title(const char *title, uint16_t accent)
     TFT_FillRect(0, 24, TFT_WIDTH, 1, UI_CARD_EDGE);
     TFT_DrawString((TFT_WIDTH - (uint16_t)(strlen(title) * 12U)) / 2U,
                    6, title, accent, UI_TITLE_BG, 2);
+}
+
+/* UTF-8 混合字符串渲染宽度(TFT_DrawStringZh 布局): 中文=17px, ASCII=16px */
+static uint16_t zh_str_width(const char *s)
+{
+    uint16_t w = 0;
+    while (*s != '\0') {
+        const uint8_t *p = (const uint8_t *)s;
+        if (*p >= 0xE0U) { w = (uint16_t)(w + 17U); s += 3; }
+        else             { w = (uint16_t)(w + 16U); s += 1; }
+    }
+    return w;
+}
+
+/* 中文标题栏：深色底 + 分隔线 + 按中文宽度居中 */
+static void draw_page_title_zh(const char *title, uint16_t accent)
+{
+    TFT_FillRect(0, 0, TFT_WIDTH, 24, UI_TITLE_BG);
+    TFT_FillRect(0, 24, TFT_WIDTH, 1, UI_CARD_EDGE);
+    TFT_DrawStringZh((TFT_WIDTH - zh_str_width(title)) / 2U, 6, title, accent, UI_TITLE_BG);
 }
 
 /* 主界面 4 张卡片的位置（横屏 240x135，居中 2x2 小卡 + 底部时间栏） */
@@ -470,14 +553,15 @@ void UI_RefreshCard(uint8_t item)
 {
     char buf[32];
     uint16_t x, y, w, h;
+    if (item > 4) return;   /* 防止菜单泄漏的越界索引画出错误卡片 */
     main_card_rect(item, &x, &y, &w, &h);
 
     if (item == 4) {
         uint32_t hh, mm, ss;
         uint32_t rem_h, rem_m, rem_s;
         uint16_t fill = (g_sys.selected_item == 4) ? UI_CARD_HI : CARD_BG_TIME;
-        const char *state_str[] = {"IDLE", "HEAT", "DRY", "COOL", "DONE"};
-        uint16_t state_color[] = {UI_TEXT_DIM, UI_ACCENT2, UI_WARN, UI_ACCENT, UI_OK};
+        const char *state_str[] = {"停止烘干", "开始烘干", "开始烘干", "开始烘干", "停止烘干", "停止烘干"};
+        uint16_t state_color[] = {UI_TEXT_DIM, UI_ACCENT2, UI_WARN, UI_ACCENT, UI_ACCENT, UI_OK};
         fill_round_rect(x, y, w, h, fill, 10);
         draw_frame_rounded(x, y, w, h, (g_sys.selected_item == 4) ? UI_ACCENT : UI_CARD_EDGE, 10);
         draw_icon_clock(x + 10, y + 4, fill);
@@ -486,14 +570,14 @@ void UI_RefreshCard(uint8_t item)
         ss = g_sys.params.dry_time_sec % 60;
         sprintf(buf, "%02lu:%02lu:%02lu", hh, mm, ss);
         TFT_DrawString(x + (w - 8U * 12U) / 2U, y + (h - 14U) / 2U, buf, UI_ACCENT, fill, 2);
-        TFT_DrawString(175, y + (h - 8U) / 2U, state_str[g_sys.run_state],
-                       state_color[g_sys.run_state], fill, 1);
+        TFT_DrawStringZh(166, y + (h - 16U) / 2U, state_str[g_sys.run_state],
+                         state_color[g_sys.run_state], fill);
         if (g_sys.run_state == STATE_DRYING) {
             rem_h = g_sys.remaining_sec / 3600;
             rem_m = (g_sys.remaining_sec % 3600) / 60;
             rem_s = g_sys.remaining_sec % 60;
-            sprintf(buf, "REM %02lu:%02lu:%02lu", rem_h, rem_m, rem_s);
-            TFT_DrawString(x + (224U - 16U * 6U) / 2U, y + 20, buf, UI_OK, fill, 1);
+            sprintf(buf, "剩余%02lu:%02lu:%02lu", rem_h, rem_m, rem_s);
+            TFT_DrawStringZh(x + (224U - zh_str_width(buf)) / 2U, y + 18, buf, UI_OK, fill);
         }
         return;
     }
@@ -527,8 +611,8 @@ void UI_DrawMainScreen(void)
     char buf[32];
     uint32_t h, m, s;
     uint16_t cy;
-    const char *state_str[] = {"IDLE", "HEAT", "DRY", "COOL", "DONE"};
-    uint16_t state_color[] = {UI_TEXT_DIM, UI_ACCENT2, UI_WARN, UI_ACCENT, UI_OK};
+    const char *state_str[] = {"停止烘干", "开始烘干", "开始烘干", "开始烘干", "停止烘干", "停止烘干"};
+    uint16_t state_color[] = {UI_TEXT_DIM, UI_ACCENT2, UI_WARN, UI_ACCENT, UI_ACCENT, UI_OK};
 
     const uint16_t card_w = 108;
     const uint16_t card_h = 38;
@@ -571,16 +655,16 @@ void UI_DrawMainScreen(void)
     sprintf(buf, "%02lu:%02lu:%02lu", h, m, s);
     TFT_DrawString(left + (224U - 8U * 12U) / 2U, cy + (30U - 14U) / 2U, buf, UI_ACCENT,
                    (g_sys.selected_item == 4) ? UI_CARD_HI : CARD_BG_TIME, 2);
-    TFT_DrawString(175, cy + (30U - 8U) / 2U, state_str[g_sys.run_state],
-                   state_color[g_sys.run_state],
-                   (g_sys.selected_item == 4) ? UI_CARD_HI : CARD_BG_TIME, 1);
+    TFT_DrawStringZh(166, cy + (30U - 16U) / 2U, state_str[g_sys.run_state],
+                     state_color[g_sys.run_state],
+                     (g_sys.selected_item == 4) ? UI_CARD_HI : CARD_BG_TIME);
     if (g_sys.run_state == STATE_DRYING) {
         h = g_sys.remaining_sec / 3600;
         m = (g_sys.remaining_sec % 3600) / 60;
         s = g_sys.remaining_sec % 60;
-        sprintf(buf, "REM %02lu:%02lu:%02lu", h, m, s);
-        TFT_DrawString(left + (224U - 16U * 6U) / 2U, cy + 20, buf, UI_OK,
-                       (g_sys.selected_item == 4) ? UI_CARD_HI : CARD_BG_TIME, 1);
+        sprintf(buf, "剩余%02lu:%02lu:%02lu", h, m, s);
+TFT_DrawStringZh(left + (224U - zh_str_width(buf)) / 2U, cy + 18, buf, UI_OK,
+                   (g_sys.selected_item == 4) ? UI_CARD_HI : CARD_BG_TIME);
     }
 }
 
@@ -588,227 +672,272 @@ void UI_DrawWeightScreen(void)
 {
     char buf[32];
     TFT_FillScreen(UI_BG);
-    draw_page_title("WEIGHT TOOL", UI_ACCENT2);
-    sprintf(buf, "Current: %.1fg", g_sys.weight_g);
-    TFT_DrawString(30, 50, buf, UI_ACCENT2, UI_BG, 2);
-    fill_round_rect(10, 80, 220, 26, UI_CARD, 6);
+    draw_page_title_zh("重量", UI_ACCENT2);
+    sprintf(buf, "当前: %.1fg", g_sys.weight_g);
+    TFT_DrawStringZh(30, 35, buf, UI_ACCENT2, UI_BG);
+    TFT_DrawStringZh(10, 59, "去皮", UI_TEXT_DIM, UI_BG);
+    TFT_DrawStringZh(10, 77, "退出", UI_TEXT_DIM, UI_BG);
     if (g_sys.selected_item == 0) {
-        TFT_DrawString(20, 87, "> Tare", UI_WARN, UI_CARD, 1);
-        TFT_DrawString(120, 87, "  Exit", UI_TEXT_DIM, UI_CARD, 1);
-    } else {
-        TFT_DrawString(20, 87, "  Tare", UI_TEXT_DIM, UI_CARD, 1);
-        TFT_DrawString(120, 87, "> Exit", UI_WARN, UI_CARD, 1);
+        TFT_FillRect(10, 58, 40, 16, UI_ACCENT);
+        TFT_DrawStringZh(10, 59, "去皮", UI_TEXT, UI_ACCENT);
     }
-    TFT_DrawString(60, 118, "Click: Select", UI_TEXT_DIM, UI_BG, 1);
+    if (g_sys.selected_item == 1) {
+        TFT_FillRect(10, 76, 40, 16, UI_ACCENT);
+        TFT_DrawStringZh(10, 77, "退出", UI_TEXT, UI_ACCENT);
+    }
+}
+
+static void refresh_weight_sel(uint8_t old_idx, uint8_t new_idx)
+{
+    static const char *labels[2] = {"去皮", "退出"};
+    static const uint8_t ys[2] = {58, 76};
+    static const uint8_t fw[2] = {40, 40};
+    uint8_t i;
+    for (i = 0; i < 2; i++) {
+        if (i != old_idx && i != new_idx) continue;
+        if (i == new_idx) {
+            TFT_FillRect(10, ys[i], fw[i], 16, UI_ACCENT);
+            TFT_DrawStringZh(10, ys[i], labels[i], UI_TEXT, UI_ACCENT);
+        } else {
+            TFT_FillRect(10, ys[i], fw[i], 16, UI_BG);
+            TFT_DrawStringZh(10, ys[i], labels[i], UI_TEXT_DIM, UI_BG);
+        }
+    }
 }
 
 void UI_DrawTempAdjust(void)
 {
     char buf[16];
     TFT_FillScreen(UI_BG);
-    draw_page_title("TEMP SETTINGS", UI_WARN);
+    draw_page_title_zh("温度设置", UI_WARN);
+    TFT_DrawStringZh(10, 42, "设置温度", UI_TEXT_DIM, UI_BG);
+    TFT_DrawStringZh(10, 60, "PID设置", UI_TEXT_DIM, UI_BG);
+    TFT_DrawStringZh(10, 78, "返回", UI_TEXT_DIM, UI_BG);
     if (g_sys.selected_item == 0) {
-        TFT_DrawString(10, 40, "> Set Temp", UI_TEXT, UI_BG, 1);
-        TFT_DrawString(150, 40, "  PID Autotune", UI_TEXT_DIM, UI_BG, 1);
-    } else if (g_sys.selected_item == 1) {
-        TFT_DrawString(10, 40, "  Set Temp", UI_TEXT_DIM, UI_BG, 1);
-        TFT_DrawString(150, 40, "> PID Autotune", UI_TEXT, UI_BG, 1);
-    } else {
-        TFT_DrawString(10, 40, "  Set Temp", UI_TEXT_DIM, UI_BG, 1);
-        TFT_DrawString(150, 40, "  PID Autotune", UI_TEXT_DIM, UI_BG, 1);
+        TFT_FillRect(10, 42, 76, 16, UI_ACCENT);
+        TFT_DrawStringZh(10, 42, "设置温度", UI_TEXT, UI_ACCENT);
+    }
+    if (g_sys.selected_item == 1) {
+        TFT_FillRect(10, 60, 92, 16, UI_ACCENT);
+        TFT_DrawStringZh(10, 60, "PID设置", UI_TEXT, UI_ACCENT);
+    }
+    if (g_sys.selected_item == 2) {
+        TFT_FillRect(10, 78, 44, 16, UI_ACCENT);
+        TFT_DrawStringZh(10, 78, "返回", UI_TEXT, UI_ACCENT);
     }
     sprintf(buf, "%d", g_sys.params.target_temp);
-    TFT_DrawString(10, 70, buf, UI_WARN, UI_BG, 3);
-    draw_degree(70, 72, UI_WARN, 2);
-    TFT_DrawString(10, 105, "Rotate: Select  Click: Enter", UI_TEXT_DIM, UI_BG, 1);
-    fill_round_rect(10, 118, 220, 1, UI_CARD_EDGE, 0);
+    draw_val_deg(42, buf, UI_WARN);
+}
+
+static void refresh_temp_adj_sel(uint8_t old_idx, uint8_t new_idx)
+{
+    static const char *labels[3] = {"设置温度", "PID设置", "返回"};
+    static const uint8_t ys[3] = {42, 60, 78};
+    static const uint8_t fw[3] = {76, 92, 44};
+    uint8_t i;
+    for (i = 0; i < 3; i++) {
+        if (i != old_idx && i != new_idx) continue;
+        if (i == new_idx) {
+            TFT_FillRect(10, ys[i], fw[i], 16, UI_ACCENT);
+            TFT_DrawStringZh(10, ys[i], labels[i], UI_TEXT, UI_ACCENT);
+        } else {
+            TFT_FillRect(10, ys[i], fw[i], 16, UI_BG);
+            TFT_DrawStringZh(10, ys[i], labels[i], UI_TEXT_DIM, UI_BG);
+        }
+    }
 }
 
 void UI_DrawTempEdit(void)
 {
     char buf[16];
     TFT_FillScreen(UI_BG);
-    TFT_DrawString(5, 20, "SET TARGET TEMP", COLOR_WHITE, COLOR_BLACK, 2);
+    draw_page_title_zh("设置温度", UI_WARN);
     sprintf(buf, "%d", g_sys.params.target_temp);
-    TFT_DrawString(30, 70, buf, COLOR_ORANGE, COLOR_BLACK, 4);
+    TFT_DrawString(30, 70, buf, COLOR_ORANGE, UI_BG, 4);
     draw_degree(90, 72, COLOR_ORANGE, 2);
-    draw_btn(160, "  Save & Exit", COLOR_GREEN, g_sys.selected_item == 0);
-    draw_btn(184, "  Cancel", COLOR_GRAY, g_sys.selected_item == 1);
-    TFT_DrawString(10, 140, "Rotate: Adj", COLOR_GRAY, COLOR_BLACK, 1);
+    draw_btn(160, "  保存退出", COLOR_GREEN, g_sys.selected_item == 0);
+    draw_btn(184, "  取消", UI_TEXT_DIM, g_sys.selected_item == 1);
 }
 
 void UI_DrawTempPid(void)
 {
     char buf[32];
     TFT_FillScreen(UI_BG);
-    TFT_DrawString(5, 10, "TEMP PID TUNE", COLOR_WHITE, COLOR_BLACK, 2);
-    sprintf(buf, "Cal: %d", g_sys.params.target_temp);
-    TFT_DrawString(10, 40, buf, COLOR_ORANGE, COLOR_BLACK, 1);
-    draw_degree(76, 40, COLOR_ORANGE, 1);
+    draw_page_title_zh("温度PID", UI_WARN);
+    sprintf(buf, "温度 %d", g_sys.params.target_temp);
+    TFT_DrawStringZh((TFT_WIDTH - zh_str_width(buf)) / 2U, 40, buf, COLOR_ORANGE, UI_BG);
+    draw_degree(116, 40, COLOR_ORANGE, 2);
     if (g_sys.temp_pid_running) {
-        TFT_DrawString(10, 65, "Running...", COLOR_YELLOW, COLOR_BLACK, 2);
-        TFT_FillRect(10, 95, 115, 1, COLOR_WHITE);
-        TFT_FillRect(10, 104, 115, 1, COLOR_WHITE);
-        TFT_FillRect(10, 95, 1, 10, COLOR_WHITE);
-        TFT_FillRect(124, 95, 1, 10, COLOR_WHITE);
+        TFT_DrawStringZh((TFT_WIDTH - zh_str_width("启动中")) / 2U, 65, "启动中", COLOR_YELLOW, UI_BG);
+        TFT_FillRect(40, 95, 160, 2, COLOR_WHITE);
+        TFT_FillRect(40, 107, 160, 2, COLOR_WHITE);
+        TFT_FillRect(40, 95, 2, 14, COLOR_WHITE);
+        TFT_FillRect(198, 95, 2, 14, COLOR_WHITE);
         uint8_t pct = g_sys.temp_pid_progress;
-        TFT_FillRect(11, 96, (uint16_t)(113U * pct / 100U), 8, COLOR_GREEN);
+        TFT_FillRect(42, 97, (uint16_t)(156U * pct / 100U), 10, COLOR_GREEN);
         sprintf(buf, "%d%%", pct);
-        TFT_DrawString(50, 110, buf, COLOR_WHITE, COLOR_BLACK, 1);
+        TFT_DrawString((TFT_WIDTH - (uint16_t)(strlen(buf) * 12U)) / 2U, 115, buf, UI_TEXT, UI_BG, 2);
     } else {
-        TFT_DrawString(10, 65, "Complete!", COLOR_GREEN, COLOR_BLACK, 2);
+        TFT_DrawStringZh((TFT_WIDTH - zh_str_width("完成")) / 2U, 65, "完成", COLOR_GREEN, UI_BG);
         sprintf(buf, "KP:%.2f KI:%.2f KD:%.2f", g_sys.params.pid_kp, g_sys.params.pid_ki, g_sys.params.pid_kd);
-        TFT_DrawString(10, 95, buf, COLOR_CYAN, COLOR_BLACK, 1);
+        TFT_DrawString((TFT_WIDTH - (uint16_t)(strlen(buf) * 12U)) / 2U, 95, buf, COLOR_CYAN, UI_BG, 2);
     }
-    draw_btn(160, "  Exit", COLOR_GRAY, g_sys.selected_item == 0);
-    if (g_sys.selected_item == 0) draw_frame(5, 160, 125, BTN_H, COLOR_WHITE);
+    draw_btn(160, "  退出", UI_TEXT_DIM, g_sys.selected_item == 0);
+    if (g_sys.selected_item == 0) draw_frame(5, 160, 125, BTN_H, UI_ACCENT);
 }
 
 void UI_DrawTimeAdjust(void)
 {
-    char buf[16];
-    uint32_t h = g_sys.params.dry_time_sec / 3600;
-    uint32_t m = (g_sys.params.dry_time_sec % 3600) / 60;
-    uint32_t s = g_sys.params.dry_time_sec % 60;
+    char buf[8];
+    uint8_t i;
     TFT_FillScreen(UI_BG);
-    TFT_DrawString(25, 10, "SET TIME", COLOR_WHITE, COLOR_BLACK, 2);
-    sprintf(buf, "%02lu", h);
-    TFT_DrawString(12, 50, buf, COLOR_CYAN, COLOR_BLACK, 3);
-    TFT_DrawString(48, 50, "h", COLOR_GRAY, COLOR_BLACK, 2);
-    sprintf(buf, "%02lu", m);
-    TFT_DrawString(60, 50, buf, COLOR_CYAN, COLOR_BLACK, 3);
-    TFT_DrawString(96, 50, "m", COLOR_GRAY, COLOR_BLACK, 2);
-    sprintf(buf, "%02lu", s);
-    TFT_DrawString(108, 50, buf, COLOR_CYAN, COLOR_BLACK, 3);
-    TFT_DrawString(120, 50, "s", COLOR_GRAY, COLOR_BLACK, 1);
-    TFT_DrawString(48, 53, ":", COLOR_WHITE, COLOR_BLACK, 2);
-    TFT_DrawString(96, 53, ":", COLOR_WHITE, COLOR_BLACK, 2);
-    if (g_sys.time_cursor == TIME_FIELD_HOUR) draw_frame(10, 48, 42, 28, UI_TEXT_DIM);
-    if (g_sys.time_cursor == TIME_FIELD_MIN) draw_frame(58, 48, 42, 28, UI_TEXT_DIM);
-    if (g_sys.time_cursor == TIME_FIELD_SEC) draw_frame(106, 48, 20, 28, UI_TEXT_DIM);
-    draw_btn(160, "  Edit", COLOR_YELLOW, g_sys.selected_item == 0);
-    draw_btn(184, "  Exit", COLOR_GRAY, g_sys.selected_item == 1);
-    TFT_DrawString(10, 140, "Rotate: Cursor", COLOR_GRAY, COLOR_BLACK, 1);
+    draw_page_title_zh("设置时间", UI_ACCENT);
+    for (i = 0; i < 6; i++) {
+        sprintf(buf, "%d", g_sys.time_digits[i]);
+        TFT_DrawString(time_digit_x[i], 56, buf, COLOR_CYAN, UI_BG, 4);
+        if (g_sys.time_cursor == i) draw_frame(time_digit_x[i] - 1, 55, 22, 30, UI_ACCENT2);
+    }
+    TFT_FillRect(78, 60, 8, 8, UI_ACCENT2);
+    TFT_FillRect(78, 72, 8, 8, UI_ACCENT2);
+    TFT_FillRect(152, 60, 8, 8, UI_ACCENT2);
+    TFT_FillRect(152, 72, 8, 8, UI_ACCENT2);
 }
 
 void UI_DrawTimeEdit(void)
 {
-    char buf[16];
-    uint32_t h = g_sys.params.dry_time_sec / 3600;
-    uint32_t m = (g_sys.params.dry_time_sec % 3600) / 60;
-    uint32_t s = g_sys.params.dry_time_sec % 60;
+    char buf[8];
+    uint8_t i;
     TFT_FillScreen(UI_BG);
-    TFT_DrawString(5, 10, "EDIT TIME", COLOR_YELLOW, COLOR_BLACK, 2);
-    sprintf(buf, "%02lu", h);
-    TFT_DrawString(12, 50, buf, COLOR_WHITE, COLOR_BLACK, 3);
-    TFT_DrawString(48, 50, "h", COLOR_GRAY, COLOR_BLACK, 2);
-    sprintf(buf, "%02lu", m);
-    TFT_DrawString(60, 50, buf, COLOR_WHITE, COLOR_BLACK, 3);
-    TFT_DrawString(96, 50, "m", COLOR_GRAY, COLOR_BLACK, 2);
-    sprintf(buf, "%02lu", s);
-    TFT_DrawString(108, 50, buf, COLOR_WHITE, COLOR_BLACK, 3);
-    TFT_DrawString(120, 50, "s", COLOR_GRAY, COLOR_BLACK, 1);
-    TFT_DrawString(48, 53, ":", COLOR_WHITE, COLOR_BLACK, 2);
-    TFT_DrawString(96, 53, ":", COLOR_WHITE, COLOR_BLACK, 2);
-    if (g_sys.time_cursor == TIME_FIELD_HOUR) draw_frame(10, 48, 42, 28, COLOR_YELLOW);
-    if (g_sys.time_cursor == TIME_FIELD_MIN) draw_frame(58, 48, 42, 28, COLOR_YELLOW);
-    if (g_sys.time_cursor == TIME_FIELD_SEC) draw_frame(106, 48, 20, 28, COLOR_YELLOW);
-    draw_btn(160, "  Save & Exit", COLOR_GREEN, g_sys.selected_item == 0);
-    draw_btn(184, "  Cancel", COLOR_GRAY, g_sys.selected_item == 1);
-    TFT_DrawString(10, 140, "Rotate: Adj", COLOR_GRAY, COLOR_BLACK, 1);
+    draw_page_title_zh("设置时间", COLOR_YELLOW);
+    for (i = 0; i < 6; i++) {
+        sprintf(buf, "%d", g_sys.time_digits[i]);
+        TFT_DrawString(time_digit_x[i], 56, buf, UI_TEXT, UI_BG, 4);
+        if (g_sys.time_cursor == i) draw_frame(time_digit_x[i] - 1, 55, 22, 30, COLOR_YELLOW);
+    }
+    TFT_FillRect(78, 60, 8, 8, UI_ACCENT2);
+    TFT_FillRect(78, 72, 8, 8, UI_ACCENT2);
+    TFT_FillRect(152, 60, 8, 8, UI_ACCENT2);
+    TFT_FillRect(152, 72, 8, 8, UI_ACCENT2);
+    draw_btn(160, "  保存退出", COLOR_GREEN, g_sys.selected_item == 0);
+    draw_btn(184, "  取消", UI_TEXT_DIM, g_sys.selected_item == 1);
 }
 
 void UI_DrawPtcAdjust(void)
 {
     char buf[16];
     TFT_FillScreen(UI_BG);
-    TFT_DrawString(15, 20, "PTC SETTINGS", COLOR_WHITE, COLOR_BLACK, 2);
-    TFT_DrawString(10, 60, "> Max Temp", COLOR_GRAY, COLOR_BLACK, 1);
+    draw_page_title_zh("PTC设置", UI_ACCENT2);
+    TFT_DrawStringZh(10, 42, "最高温度", UI_TEXT_DIM, UI_BG);
+    TFT_DrawStringZh(10, 60, "冷却温度", UI_TEXT_DIM, UI_BG);
+    TFT_DrawStringZh(10, 78, "PID设置", UI_TEXT_DIM, UI_BG);
+    TFT_DrawStringZh(10, 96, "退出", UI_TEXT_DIM, UI_BG);
+    if (g_sys.selected_item == 0) {
+        TFT_FillRect(10, 42, 76, 16, UI_ACCENT2);
+        TFT_DrawStringZh(10, 42, "最高温度", UI_TEXT, UI_ACCENT2);
+    }
+    if (g_sys.selected_item == 1) {
+        TFT_FillRect(10, 60, 76, 16, UI_ACCENT2);
+        TFT_DrawStringZh(10, 60, "冷却温度", UI_TEXT, UI_ACCENT2);
+    }
+    if (g_sys.selected_item == 2) {
+        TFT_FillRect(10, 78, 92, 16, UI_ACCENT2);
+        TFT_DrawStringZh(10, 78, "PID设置", UI_TEXT, UI_ACCENT2);
+    }
+    if (g_sys.selected_item == 3) {
+        TFT_FillRect(10, 96, 44, 16, UI_ACCENT2);
+        TFT_DrawStringZh(10, 96, "退出", UI_TEXT, UI_ACCENT2);
+    }
     sprintf(buf, "%d", g_sys.params.ptc_max_temp);
-    TFT_DrawString(90, 60, buf, COLOR_RED, COLOR_BLACK, 1);
-    draw_degree(102, 60, COLOR_RED, 1);
-    TFT_DrawString(10, 85, "  Cooling Temp", COLOR_GRAY, COLOR_BLACK, 1);
+    draw_val_deg(42, buf, COLOR_RED);
     sprintf(buf, "%d", g_sys.params.ptc_cooling_temp);
-    TFT_DrawString(90, 85, buf, COLOR_CYAN, COLOR_BLACK, 1);
-    draw_degree(102, 85, COLOR_CYAN, 1);
-    TFT_DrawString(10, 110, "  PID Autotune", COLOR_GRAY, COLOR_BLACK, 1);
-    draw_btn(160, "  Exit", COLOR_GRAY, 0);
-    if (g_sys.selected_item == 0) draw_frame(8, 57, 120, 18, COLOR_WHITE);
-    if (g_sys.selected_item == 1) draw_frame(8, 82, 120, 18, COLOR_WHITE);
-    if (g_sys.selected_item == 2) draw_frame(8, 107, 120, 18, COLOR_WHITE);
-    TFT_DrawString(10, 140, "Rotate: Select", COLOR_GRAY, COLOR_BLACK, 1);
-    TFT_DrawString(10, 155, "Click: Enter", COLOR_GRAY, COLOR_BLACK, 1);
+    draw_val_deg(60, buf, COLOR_CYAN);
+}
+
+static void refresh_ptc_adj_sel(uint8_t old_idx, uint8_t new_idx)
+{
+    static const char *labels[4] = {"最高温度", "冷却温度", "PID设置", "退出"};
+    static const uint8_t ys[4] = {42, 60, 78, 96};
+    static const uint8_t fw[4] = {76, 76, 92, 44};
+    uint8_t i;
+    for (i = 0; i < 4; i++) {
+        if (i != old_idx && i != new_idx) continue;
+        if (i == new_idx) {
+            TFT_FillRect(10, ys[i], fw[i], 16, UI_ACCENT2);
+            TFT_DrawStringZh(10, ys[i], labels[i], UI_TEXT, UI_ACCENT2);
+        } else {
+            TFT_FillRect(10, ys[i], fw[i], 16, UI_BG);
+            TFT_DrawStringZh(10, ys[i], labels[i], UI_TEXT_DIM, UI_BG);
+        }
+    }
 }
 
 void UI_DrawPtcEdit(void)
 {
     char buf[16];
     TFT_FillScreen(UI_BG);
-    TFT_DrawString(5, 20, "MAX PTC TEMP", COLOR_WHITE, COLOR_BLACK, 2);
+    draw_page_title_zh("PTC最高温度", COLOR_RED);
     sprintf(buf, "%d", g_sys.params.ptc_max_temp);
-    TFT_DrawString(30, 70, buf, COLOR_RED, COLOR_BLACK, 4);
+    TFT_DrawString(30, 70, buf, COLOR_RED, UI_BG, 4);
     draw_degree(90, 72, COLOR_RED, 2);
-    draw_btn(160, "  Save & Exit", COLOR_GREEN, g_sys.selected_item == 0);
-    draw_btn(184, "  Cancel", COLOR_GRAY, g_sys.selected_item == 1);
-    TFT_DrawString(10, 140, "Rotate: Adj", COLOR_GRAY, COLOR_BLACK, 1);
+    draw_btn(160, "  保存退出", COLOR_GREEN, g_sys.selected_item == 0);
+    draw_btn(184, "  取消", UI_TEXT_DIM, g_sys.selected_item == 1);
 }
 
 void UI_DrawPtcCoolingEdit(void)
 {
     char buf[16];
     TFT_FillScreen(UI_BG);
-    TFT_DrawString(5, 20, "COOLING TEMP", COLOR_WHITE, COLOR_BLACK, 2);
+    draw_page_title_zh("冷却温度", COLOR_CYAN);
     sprintf(buf, "%d", g_sys.params.ptc_cooling_temp);
-    TFT_DrawString(30, 70, buf, COLOR_CYAN, COLOR_BLACK, 4);
+    TFT_DrawString(30, 70, buf, COLOR_CYAN, UI_BG, 4);
     draw_degree(90, 72, COLOR_CYAN, 2);
-    draw_btn(160, "  Save & Exit", COLOR_GREEN, g_sys.selected_item == 0);
-    draw_btn(184, "  Cancel", COLOR_GRAY, g_sys.selected_item == 1);
-    TFT_DrawString(10, 140, "Rotate: Adj", COLOR_GRAY, COLOR_BLACK, 1);
+    draw_btn(160, "  保存退出", COLOR_GREEN, g_sys.selected_item == 0);
+    draw_btn(184, "  取消", UI_TEXT_DIM, g_sys.selected_item == 1);
 }
 
 void UI_DrawPidAutotune(void)
 {
     char buf[32];
     TFT_FillScreen(UI_BG);
-    TFT_DrawString(5, 10, "PID AUTOTUNE", COLOR_WHITE, COLOR_BLACK, 2);
-    TFT_DrawString(10, 40, "Status:", COLOR_GRAY, COLOR_BLACK, 1);
+    draw_page_title_zh("PID设置", UI_ACCENT2);
     if (g_sys.pid_autotune_running) {
-        TFT_DrawString(10, 60, "Running...", COLOR_YELLOW, COLOR_BLACK, 2);
-        TFT_FillRect(10, 90, 115, 1, COLOR_WHITE);
-        TFT_FillRect(10, 99, 115, 1, COLOR_WHITE);
-        TFT_FillRect(10, 90, 1, 10, COLOR_WHITE);
-        TFT_FillRect(124, 90, 1, 10, COLOR_WHITE);
+        TFT_DrawStringZh((TFT_WIDTH - zh_str_width("启动中")) / 2U, 45, "启动中", COLOR_YELLOW, UI_BG);
+        TFT_FillRect(40, 80, 160, 2, COLOR_WHITE);
+        TFT_FillRect(40, 92, 160, 2, COLOR_WHITE);
+        TFT_FillRect(40, 80, 2, 14, COLOR_WHITE);
+        TFT_FillRect(198, 80, 2, 14, COLOR_WHITE);
         uint8_t pct = g_sys.pid_autotune_progress;
-        TFT_FillRect(11, 91, (uint16_t)(113U * pct / 100U), 8, COLOR_GREEN);
+        TFT_FillRect(42, 82, (uint16_t)(156U * pct / 100U), 10, COLOR_GREEN);
         sprintf(buf, "%d%%", pct);
-        TFT_DrawString(50, 105, buf, COLOR_WHITE, COLOR_BLACK, 1);
+        TFT_DrawString((TFT_WIDTH - (uint16_t)(strlen(buf) * 12U)) / 2U, 100, buf, UI_TEXT, UI_BG, 2);
     } else {
-        TFT_DrawString(10, 60, "Complete!", COLOR_GREEN, COLOR_BLACK, 2);
+        TFT_DrawStringZh((TFT_WIDTH - zh_str_width("完成")) / 2U, 45, "完成", COLOR_GREEN, UI_BG);
         sprintf(buf, "KP:%.2f KI:%.2f KD:%.2f", g_sys.params.pid_kp, g_sys.params.pid_ki, g_sys.params.pid_kd);
-        TFT_DrawString(10, 90, buf, COLOR_CYAN, COLOR_BLACK, 1);
+        TFT_DrawString((TFT_WIDTH - (uint16_t)(strlen(buf) * 12U)) / 2U, 75, buf, COLOR_CYAN, UI_BG, 2);
     }
-    draw_btn(160, "  Exit", COLOR_GRAY, g_sys.selected_item == 0);
-    if (g_sys.selected_item == 0) draw_frame(5, 160, 125, BTN_H, COLOR_WHITE);
+    draw_btn(160, "  退出", UI_TEXT_DIM, g_sys.selected_item == 0);
+    if (g_sys.selected_item == 0) draw_frame(5, 160, 125, BTN_H, UI_ACCENT);
 }
 
-static const char *const kMenuItems[] = {"Start/Stop", "WiFi", "Motor", "About", "Reset", "Exit"};
+static const char *const kMenuItems[] = {"WiFi", "电机", "关于", "设置", "重置", "退出"};
 #define MENU_ITEM_COUNT   6u
-#define MENU_ROW_H        14u
-#define MENU_ROW_GAP      17u
+#define MENU_ROW_H        18u
+#define MENU_ROW_GAP      20u
 #define MENU_TOP_Y        32u
 
 /* 绘制单个菜单行：选中=蓝底白字+圆角轮廓，未选中=灰字。
  * 未选中分支先 FillRect 清掉旧的高亮底，保证局部刷新无残留。 */
 static void draw_menu_row(uint8_t i, uint8_t selected)
 {
-    uint16_t y = (uint16_t)(MENU_TOP_Y + (uint16_t)i * MENU_ROW_GAP);
+    uint16_t base_y = (g_sys.scroll_offset == 0) ? MENU_TOP_Y : 0;
+    uint16_t y = (uint16_t)(base_y + (uint16_t)(i - g_sys.scroll_offset) * MENU_ROW_GAP);
     if (selected) {
         fill_round_rect(8, y, 224, MENU_ROW_H, UI_ACCENT, 7);
         draw_frame_rounded(8, y, 224, MENU_ROW_H, TFT_COLOR(0x0D, 0x47, 0xA1), 7);
-        TFT_DrawString(18, y + 3, kMenuItems[i], UI_TEXT, UI_ACCENT, 1);
+        TFT_DrawStringZh(18, y + 1, kMenuItems[i], UI_TEXT, UI_ACCENT);
     } else {
         TFT_FillRect(8, y, 224, MENU_ROW_H, UI_BG);
-        TFT_DrawString(18, y + 3, kMenuItems[i], UI_TEXT_DIM, UI_BG, 1);
+        TFT_DrawStringZh(18, y + 1, kMenuItems[i], UI_TEXT_DIM, UI_BG);
     }
 }
 
@@ -822,53 +951,61 @@ void UI_RefreshMenuSel(uint8_t old_idx, uint8_t new_idx)
 void UI_DrawMenu(void)
 {
     uint8_t i;
+    uint8_t so = g_sys.scroll_offset;
+    uint8_t pp = 5;
+    uint8_t end = so + pp; if (end > MENU_ITEM_COUNT) end = MENU_ITEM_COUNT;
 
     TFT_FillScreen(UI_BG);
-    TFT_FillRect(0, 0, TFT_WIDTH, 24, UI_TITLE_BG);
-    TFT_FillRect(0, 24, TFT_WIDTH, 1, UI_CARD_EDGE);
-    TFT_DrawString((TFT_WIDTH - 5 * 12U) / 2U, 6, "MENU", UI_ACCENT, UI_TITLE_BG, 2);
-
-    for (i = 0; i < MENU_ITEM_COUNT; i++) {
+    if (so == 0) {
+        TFT_FillRect(0, 0, TFT_WIDTH, 24, UI_TITLE_BG);
+        TFT_FillRect(0, 24, TFT_WIDTH, 1, UI_CARD_EDGE);
+        TFT_DrawString((TFT_WIDTH - 5 * 12U) / 2U, 6, "MENU", UI_ACCENT, UI_TITLE_BG, 2);
+    }
+    for (i = so; i < end; i++) {
         draw_menu_row(i, i == g_sys.selected_item);
     }
+    draw_scrollbar(MENU_ITEM_COUNT, pp, g_sys.selected_item, (so == 0) ? 28 : 0, (so == 0) ? 100 : 135);
 }
 
 void UI_DrawMotorAdjust(void)
 {
     char buf[32];
     uint8_t is_tmc = (g_sys.params.motor_driver == MOTOR_DRIVER_TMC2209);
-    uint8_t count = is_tmc ? 9 : 6;
+    uint8_t count = is_tmc ? 9 : 7;
 
     TFT_FillScreen(UI_BG);
-    TFT_DrawString(15, 5, "MOTOR SETTINGS", COLOR_WHITE, COLOR_BLACK, 2);
+    draw_page_title_zh("电机设置", UI_ACCENT);
 
-    sprintf(buf, "> Linkage: %s", g_sys.params.motor_enabled ? "ON" : "OFF");
-    TFT_DrawString(5, 30, buf, g_sys.selected_item == 0 ? COLOR_YELLOW : COLOR_GRAY, COLOR_BLACK, 1);
-
-    sprintf(buf, "  Dir: %s", g_sys.params.motor_direction ? "CCW" : "CW");
-    TFT_DrawString(5, 45, buf, g_sys.selected_item == 1 ? COLOR_YELLOW : COLOR_GRAY, COLOR_BLACK, 1);
-
-    sprintf(buf, "  Speed: %d rpm", g_sys.params.motor_speed);
-    TFT_DrawString(5, 60, buf, g_sys.selected_item == 2 ? COLOR_YELLOW : COLOR_GRAY, COLOR_BLACK, 1);
-
-    sprintf(buf, "  Oscillate: %s", g_sys.params.motor_oscillate ? "ON" : "OFF");
-    TFT_DrawString(5, 75, buf, g_sys.selected_item == 3 ? COLOR_YELLOW : COLOR_GRAY, COLOR_BLACK, 1);
-
-    sprintf(buf, "  Angle: %d deg", g_sys.params.motor_oscillate_angle);
-    TFT_DrawString(5, 90, buf, g_sys.selected_item == 4 ? COLOR_YELLOW : COLOR_GRAY, COLOR_BLACK, 1);
-
-    sprintf(buf, "  Driver: %s", is_tmc ? "TMC2209" : "A4988");
-    TFT_DrawString(5, 105, buf, g_sys.selected_item == 5 ? COLOR_YELLOW : COLOR_GRAY, COLOR_BLACK, 1);
-
-    if (is_tmc) {
-        sprintf(buf, "  Current: %.1fA", (float)g_sys.params.motor_current / 10.0f);
-        TFT_DrawString(5, 120, buf, g_sys.selected_item == 6 ? COLOR_YELLOW : COLOR_GRAY, COLOR_BLACK, 1);
-        sprintf(buf, "  Stealth: %s", g_sys.params.motor_stealthchop ? "ON" : "OFF");
-        TFT_DrawString(5, 135, buf, g_sys.selected_item == 7 ? COLOR_YELLOW : COLOR_GRAY, COLOR_BLACK, 1);
+    /* 翻页：每页最多 5 项，根据 scroll_offset 只绘制可见项 */
+    uint8_t y = 36;
+    uint8_t so = g_sys.scroll_offset;
+    uint8_t end = so + 5;
+    if (end > count) end = count;
+    for (uint8_t i = so; i < end; i++) {
+        if (i < count - 1) {
+            switch (i) {
+            case 0: sprintf(buf, "联动:%s", g_sys.params.motor_enabled ? "开" : "关"); break;
+            case 1: sprintf(buf, "方向:%s", g_sys.params.motor_direction ? "反转" : "正转"); break;
+            case 2: sprintf(buf, "速度:%drpm", g_sys.params.motor_speed); break;
+            case 3: sprintf(buf, "摆动:%s", g_sys.params.motor_oscillate ? "开" : "关"); break;
+            case 4: sprintf(buf, "角度:%d°", g_sys.params.motor_oscillate_angle); break;
+            case 5: sprintf(buf, "驱动:%s", is_tmc ? "TMC2209" : "A4988"); break;
+            case 6: sprintf(buf, "电流:%.1fA", (float)g_sys.params.motor_current / 10.0f); break;
+            case 7: sprintf(buf, "静音:%s", g_sys.params.motor_stealthchop ? "开" : "关"); break;
+            default: buf[0] = 0; break;
+            }
+        } else {
+            sprintf(buf, "退出");
+        }
+        if (g_sys.selected_item == i) {
+            TFT_FillRect(5, y, 220, 16, UI_ACCENT);
+            TFT_DrawStringZh(5, y, buf, UI_TEXT, UI_ACCENT);
+        } else {
+            TFT_DrawStringZh(5, y, buf, UI_TEXT_DIM, UI_BG);
+        }
+        y += 18;
     }
-
-    draw_btn(is_tmc ? 210 : 195, "  Exit", COLOR_GRAY, g_sys.selected_item == count - 1);
-    TFT_DrawString(5, is_tmc ? 195 : 180, "Click: Enter", COLOR_GRAY, COLOR_BLACK, 1);
+    draw_scrollbar(count, 5, g_sys.selected_item, 36, 90);
 }
 
 void UI_DrawMotorEdit(void)
@@ -878,23 +1015,22 @@ void UI_DrawMotorEdit(void)
     uint8_t is_tmc = (g_sys.params.motor_driver == MOTOR_DRIVER_TMC2209);
 
     TFT_FillScreen(UI_BG);
-    TFT_DrawString(5, 10, "EDIT PARAM", COLOR_WHITE, COLOR_BLACK, 2);
+    draw_page_title_zh("设置电机", COLOR_YELLOW);
 
     switch (idx) {
-    case 0: sprintf(buf, "Linkage: %s", g_sys.params.motor_enabled ? "ON" : "OFF"); break;
-    case 1: sprintf(buf, "Direction: %s", g_sys.params.motor_direction ? "CCW" : "CW"); break;
-    case 2: sprintf(buf, "Speed: %d rpm", g_sys.params.motor_speed); break;
-    case 3: sprintf(buf, "Oscillate: %s", g_sys.params.motor_oscillate ? "ON" : "OFF"); break;
-    case 4: sprintf(buf, "Angle: %d deg", g_sys.params.motor_oscillate_angle); break;
-    case 5: sprintf(buf, "Driver: %s", is_tmc ? "TMC2209" : "A4988"); break;
-    case 6: sprintf(buf, "Current: %.1fA", (float)g_sys.params.motor_current / 10.0f); break;
-    case 7: sprintf(buf, "Stealth: %s", g_sys.params.motor_stealthchop ? "ON" : "OFF"); break;
+    case 0: sprintf(buf, "联动:%s", g_sys.params.motor_enabled ? "开" : "关"); break;
+    case 1: sprintf(buf, "方向:%s", g_sys.params.motor_direction ? "反转" : "正转"); break;
+    case 2: sprintf(buf, "速度:%drpm", g_sys.params.motor_speed); break;
+    case 3: sprintf(buf, "摆动:%s", g_sys.params.motor_oscillate ? "开" : "关"); break;
+    case 4: sprintf(buf, "角度:%d°", g_sys.params.motor_oscillate_angle); break;
+    case 5: sprintf(buf, "驱动:%s", is_tmc ? "TMC2209" : "A4988"); break;
+    case 6: sprintf(buf, "电流:%.1fA", (float)g_sys.params.motor_current / 10.0f); break;
+    case 7: sprintf(buf, "静音:%s", g_sys.params.motor_stealthchop ? "开" : "关"); break;
     default: break;
     }
-    TFT_DrawString(10, 60, buf, COLOR_YELLOW, COLOR_BLACK, 2);
-    TFT_DrawString(10, 100, "Rotate: Adj", COLOR_GRAY, COLOR_BLACK, 1);
-    draw_btn(160, "  Save & Exit", COLOR_GREEN, g_sys.selected_item == 0);
-    draw_btn(184, "  Cancel", COLOR_GRAY, g_sys.selected_item == 1);
+    TFT_DrawStringZh(10, 60, buf, COLOR_YELLOW, UI_BG);
+    draw_btn(160, "  保存退出", COLOR_GREEN, g_sys.selected_item == 0);
+    draw_btn(184, "  取消", UI_TEXT_DIM, g_sys.selected_item == 1);
 }
 
 void UI_DrawAbout(void)
@@ -902,43 +1038,47 @@ void UI_DrawAbout(void)
     char buf[64];
     uint32_t id = g_sys.device_id;
     TFT_FillScreen(UI_BG);
-    TFT_DrawString(5, 10, "About", COLOR_WHITE, COLOR_BLACK, 2);
-    TFT_DrawString(5, 40, "DRYER V1.0", COLOR_YELLOW, COLOR_BLACK, 3);
-    sprintf(buf, "Ver: %s", APP_VERSION);
-    TFT_DrawString(5, 75, buf, COLOR_CYAN, COLOR_BLACK, 1);
-    sprintf(buf, "Dev: %s", DEV_NAME);
-    TFT_DrawString(5, 95, buf, COLOR_GREEN, COLOR_BLACK, 1);
-    sprintf(buf, "Shell: %s", DEV_SHELL);
-    TFT_DrawString(5, 115, buf, COLOR_GREEN, COLOR_BLACK, 1);
-    sprintf(buf, "SN: %08lX", id);
-    TFT_DrawString(5, 135, buf, COLOR_ORANGE, COLOR_BLACK, 1);
-    draw_btn(184, "  Exit", COLOR_GRAY, g_sys.selected_item == 0);
-    if (g_sys.selected_item == 0) draw_frame(5, 184, 125, BTN_H, COLOR_WHITE);
+    draw_page_title_zh("关于", UI_ACCENT);
+    TFT_DrawStringZh((TFT_WIDTH - zh_str_width("烘干机V1.0")) / 2U, 40, "烘干机V1.0", COLOR_YELLOW, UI_BG);
+    sprintf(buf, "版本:%s", APP_VERSION);
+    TFT_DrawStringZh(5, 60, buf, COLOR_CYAN, UI_BG);
+    sprintf(buf, "设备:%s", DEV_NAME);
+    TFT_DrawStringZh(5, 78, buf, COLOR_GREEN, UI_BG);
+    sprintf(buf, "外壳:%s", DEV_SHELL);
+    TFT_DrawStringZh(5, 96, buf, COLOR_GREEN, UI_BG);
+    sprintf(buf, "序列号:%08lX", id);
+    TFT_DrawStringZh(5, 114, buf, COLOR_ORANGE, UI_BG);
+    draw_btn(184, "  退出", UI_TEXT_DIM, g_sys.selected_item == 0);
+    if (g_sys.selected_item == 0) draw_frame(5, 184, 125, BTN_H, UI_ACCENT);
 }
 
 void UI_DrawWiFiScreen(void)
 {
     TFT_FillScreen(UI_BG);
-    TFT_DrawString(35, 10, "WIFI", COLOR_WHITE, COLOR_BLACK, 2);
-    if (!g_sys.wifi_enabled) {
-        TFT_DrawString(10, 60, "WiFi: OFF", COLOR_GRAY, COLOR_BLACK, 2);
-        TFT_DrawString(10, 100, "Click to ON", COLOR_YELLOW, COLOR_BLACK, 1);
+    draw_page_title_zh("WiFi设置", UI_ACCENT);
+    if (g_sys.selected_item == 1) {
+        TFT_FillRect(10, 60, 90, 16, UI_ACCENT);
+        TFT_DrawStringZh(10, 60, g_sys.wifi_enabled ? "WiFi:开" : "WiFi:关", UI_TEXT, UI_ACCENT);
     } else {
-        TFT_DrawString(10, 60, "WiFi: ON", COLOR_GREEN, COLOR_BLACK, 2);
-        if (g_sys.wifi_ap_mode) {
-            TFT_DrawString(10, 90, "Mode: AP", COLOR_CYAN, COLOR_BLACK, 1);
-            TFT_DrawString(10, 110, WIFI_AP_SSID, COLOR_WHITE, COLOR_BLACK, 1);
-            TFT_DrawString(10, 130, "IP:", COLOR_GRAY, COLOR_BLACK, 1);
-            TFT_DrawString(10, 150, g_sys.wifi_ip, COLOR_YELLOW, COLOR_BLACK, 1);
-        } else {
-            TFT_DrawString(10, 90, "Mode: STA", COLOR_CYAN, COLOR_BLACK, 1);
-            TFT_DrawString(10, 110, g_sys.wifi_ip, COLOR_WHITE, COLOR_BLACK, 1);
-        }
-        TFT_DrawString(10, 180, "Connect to AP", COLOR_GRAY, COLOR_BLACK, 1);
-        TFT_DrawString(10, 200, "Open browser", COLOR_GRAY, COLOR_BLACK, 1);
+        TFT_DrawStringZh(10, 60, g_sys.wifi_enabled ? "WiFi:开" : "WiFi:关", g_sys.wifi_enabled ? COLOR_GREEN : UI_TEXT_DIM, UI_BG);
     }
-    draw_btn(184, "  Exit", COLOR_GRAY, g_sys.selected_item == 0);
-    if (g_sys.selected_item == 0) draw_frame(5, 184, 125, BTN_H, COLOR_WHITE);
+    if (g_sys.wifi_enabled) {
+        if (g_sys.wifi_ap_mode) {
+            TFT_DrawStringZh(10, 78, "模式:AP", COLOR_CYAN, UI_BG);
+            TFT_DrawString(10, 96, WIFI_AP_SSID, UI_TEXT, UI_BG, 2);
+        } else {
+            TFT_DrawStringZh(10, 78, "模式:STA", COLOR_CYAN, UI_BG);
+            TFT_DrawString(10, 96, g_sys.wifi_ip, UI_TEXT, UI_BG, 2);
+        }
+    } else {
+        TFT_DrawStringZh(10, 78, "点击开启", COLOR_YELLOW, UI_BG);
+    }
+    if (g_sys.selected_item == 0) {
+        TFT_FillRect(10, 120, 44, 16, UI_ACCENT);
+        TFT_DrawStringZh(10, 120, "退出", UI_TEXT, UI_ACCENT);
+    } else {
+        TFT_DrawStringZh(10, 120, "退出", UI_TEXT_DIM, UI_BG);
+    }
 }
 
 static uint8_t ota_screen_drawn = 0;
@@ -954,13 +1094,13 @@ void UI_DrawOTAScreen(void)
     if (!ota_screen_drawn) {
         ota_screen_drawn = 1;
         TFT_FillScreen(UI_BG);
-        TFT_DrawString(25, 10, "FIRMWARE", COLOR_WHITE, COLOR_BLACK, 2);
-        draw_btn(184, "  Exit", COLOR_GRAY, g_sys.selected_item == 0);
-        if (g_sys.selected_item == 0) draw_frame(5, 184, 125, BTN_H, COLOR_WHITE);
+        TFT_DrawStringZh((TFT_WIDTH - zh_str_width("固件")) / 2U, 10, "固件", UI_TEXT, UI_BG);
+        draw_btn(184, "  退出", UI_TEXT_DIM, g_sys.selected_item == 0);
+        if (g_sys.selected_item == 0) draw_frame(5, 184, 125, BTN_H, UI_ACCENT);
     }
     if (g_sys.ota_downloading) {
-        TFT_FillRect(10, 55, 120, 30, COLOR_BLACK);
-        TFT_DrawString(10, 60, "Downloading...", COLOR_YELLOW, COLOR_BLACK, 1);
+        TFT_FillRect(10, 55, 120, 30, UI_BG);
+        TFT_DrawStringZh(10, 60, "下载中...", COLOR_YELLOW, UI_BG);
         TFT_FillRect(10, 90, 115, 1, COLOR_WHITE);
         TFT_FillRect(10, 99, 115, 1, COLOR_WHITE);
         TFT_FillRect(10, 90, 1, 10, COLOR_WHITE);
@@ -968,36 +1108,93 @@ void UI_DrawOTAScreen(void)
         TFT_FillRect(11, 91, (113 * g_sys.ota_progress) / 100, 8, COLOR_GREEN);
         char buf[32];
         sprintf(buf, "%d%% (%lu/%lu)", g_sys.ota_progress, g_sys.ota_received_size, g_sys.ota_total_size);
-        TFT_FillRect(10, 110, 120, 12, COLOR_BLACK);
-        TFT_DrawString(10, 115, buf, COLOR_GRAY, COLOR_BLACK, 1);
+        TFT_FillRect(10, 110, 120, 12, UI_BG);
+        TFT_DrawString(10, 115, buf, UI_TEXT_DIM, UI_BG, 2);
     } else if (g_sys.ota_download_done) {
-        TFT_FillRect(10, 55, 120, 60, COLOR_BLACK);
-        TFT_DrawString(10, 60, "Download OK!", COLOR_GREEN, COLOR_BLACK, 2);
-        TFT_DrawString(10, 100, "Click to Update", COLOR_YELLOW, COLOR_BLACK, 1);
-        TFT_DrawString(10, 120, "Device will restart", COLOR_GRAY, COLOR_BLACK, 1);
+        TFT_FillRect(10, 55, 120, 60, UI_BG);
+        TFT_DrawStringZh(10, 60, "下载完成", COLOR_GREEN, UI_BG);
+        TFT_DrawStringZh(10, 85, "点击上传", COLOR_YELLOW, UI_BG);
+        TFT_DrawStringZh(10, 103, "设备将重启", UI_TEXT_DIM, UI_BG);
     } else {
-        TFT_FillRect(10, 55, 120, 60, COLOR_BLACK);
-        TFT_DrawString(10, 60, "Drag firmware", COLOR_GRAY, COLOR_BLACK, 1);
-        TFT_DrawString(10, 80, "to web page", COLOR_GRAY, COLOR_BLACK, 1);
-        TFT_DrawString(10, 110, "and click Upload", COLOR_GRAY, COLOR_BLACK, 1);
+        TFT_FillRect(10, 55, 120, 60, UI_BG);
+        TFT_DrawStringZh(10, 60, "拖拽固件", UI_TEXT_DIM, UI_BG);
+        TFT_DrawStringZh(10, 78, "到网页", UI_TEXT_DIM, UI_BG);
+        TFT_DrawStringZh(10, 96, "点击上传", UI_TEXT_DIM, UI_BG);
     }
 }
 
 void UI_DrawSafetyAlert(void)
 {
     TFT_FillScreen(COLOR_RED);
-    TFT_DrawString(5, 30, "SAFETY ALERT", COLOR_WHITE, COLOR_RED, 2);
+    TFT_DrawStringZh(5, 30, "安全警报", COLOR_WHITE, COLOR_RED);
 
     if (g_sys.safety_state == SAFETY_BOX_BROKEN) {
-        TFT_DrawString(5, 70, "BOX BROKEN DETECTED", COLOR_WHITE, COLOR_RED, 2);
-        TFT_DrawString(5, 100, "DRYING STOPPED", COLOR_WHITE, COLOR_RED, 2);
+        TFT_DrawStringZh(5, 70, "箱体破损", COLOR_WHITE, COLOR_RED);
+        TFT_DrawStringZh(5, 100, "烘干停止", COLOR_WHITE, COLOR_RED);
     } else if (g_sys.safety_state == SAFETY_LID_OPEN) {
-        TFT_DrawString(5, 70, "LID OPEN DETECTED", COLOR_WHITE, COLOR_RED, 2);
-        TFT_DrawString(5, 100, "DRYING STOPPED", COLOR_WHITE, COLOR_RED, 2);
+        TFT_DrawStringZh(5, 70, "上盖打开", COLOR_WHITE, COLOR_RED);
+        TFT_DrawStringZh(5, 100, "烘干停止", COLOR_WHITE, COLOR_RED);
     }
 
-    draw_btn(160, "  Confirm", COLOR_GREEN, 1);
-    draw_frame(5, 160, 125, BTN_H, COLOR_WHITE);
+    draw_btn(160, "  确认", COLOR_GREEN, 1);
+    draw_frame(5, 160, 125, BTN_H, UI_ACCENT);
+}
+
+void UI_DrawSettingsScreen(void)
+{
+    char buf[32];
+    uint8_t i;
+    uint8_t cnt = 6;
+    uint8_t so = g_sys.scroll_offset;
+    uint8_t end = so + 5; if (end > cnt) end = cnt;
+    TFT_FillScreen(UI_BG);
+    draw_page_title_zh("设置", UI_ACCENT);
+    for (i = so; i < end; i++) {
+        static const char *kLabels[] = {"蜂鸣器联动","蜂鸣器音量","灯光开关","背光","主题","退出"};
+        uint16_t y = (uint16_t)(36 + (i - so) * 18);
+        TFT_DrawStringZh(10, y, kLabels[i], UI_TEXT_DIM, UI_BG);
+        if (i == g_sys.selected_item) {
+            TFT_FillRect(10, y, 95, 16, UI_ACCENT);
+            TFT_DrawStringZh(10, y, kLabels[i], UI_TEXT, UI_ACCENT);
+        }
+        if (i < 5) {
+            switch (i) {
+            case 0: sprintf(buf, "%s", g_sys.buzzer_link ? "开" : "关"); break;
+            case 1: sprintf(buf, "%d/10", g_sys.buzzer_vol); break;
+            case 2: sprintf(buf, "%s", g_sys.light_switch ? "开" : "关"); break;
+            case 3: sprintf(buf, "%d%%", g_sys.backlight); break;
+            case 4: sprintf(buf, "%s", g_sys.theme ? "暗色" : "亮色"); break;
+            default: buf[0] = 0;
+            }
+            TFT_DrawStringZh(120, y, buf, UI_ACCENT, UI_BG);
+            if (i == 1 || i == 3) {
+                uint8_t m = (i == 1) ? 10U : 100U;
+                uint8_t v = (i == 1) ? g_sys.buzzer_vol : g_sys.backlight;
+                uint8_t w = (uint8_t)((uint16_t)v * 50U / m);
+                TFT_FillRect(165, y + 2, 50, 6, UI_CARD_EDGE);
+                if (w) TFT_FillRect(165, y + 2, w, 6, UI_ACCENT);
+            }
+        }
+    }
+    draw_scrollbar(cnt, 5, g_sys.selected_item, 36, 90);
+}
+
+/* 设置页编辑中数值变化时只局部刷新该项的数值文本+进度条，避免全屏重绘
+ * (全屏重绘阻塞主循环→编码器轮询被节流→加速失效，且造成闪屏)。 */
+void UI_RefreshSettingsValue(void)
+{
+    uint8_t i = g_sys.selected_item;
+    if (i != 1 && i != 3) return;
+    uint16_t y = (uint16_t)(36 + (i - g_sys.scroll_offset) * 18);
+    char buf[16];
+    uint8_t m, v, w;
+    if (i == 1) { m = 10;  v = g_sys.buzzer_vol; sprintf(buf, "%d/10", v); }
+    else        { m = 100; v = g_sys.backlight;   sprintf(buf, "%d%%", v); }
+    TFT_FillRect(120, y, 40, 16, UI_BG);                 /* 清旧值 */
+    TFT_DrawString(120, y, buf, UI_ACCENT, UI_BG, 2);    /* 画新值 */
+    w = (uint8_t)((uint16_t)v * 50U / m);
+    TFT_FillRect(165, y + 2, 50, 6, UI_CARD_EDGE);       /* 进度条底 */
+    if (w) TFT_FillRect(165, y + 2, w, 6, UI_ACCENT);   /* 进度条填充 */
 }
 
 static Screen_t last_screen = (Screen_t)255;
@@ -1005,15 +1202,37 @@ static Screen_t last_screen = (Screen_t)255;
 void UI_Update(void)
 {
     if (g_sys.current_screen != last_screen) {
+        g_sys.scroll_offset = 0;
         last_screen = g_sys.current_screen;
         switch (g_sys.current_screen) {
-            case SCREEN_MAIN:          UI_DrawMainScreen(); break;
+            case SCREEN_MAIN:
+                if (g_sys.selected_item > 4) g_sys.selected_item = 0;   /* 菜单泄漏索引收敛 */
+                UI_DrawMainScreen();
+                break;
             case SCREEN_WEIGHT:        UI_DrawWeightScreen(); break;
             case SCREEN_TEMP_ADJUST:   UI_DrawTempAdjust(); break;
             case SCREEN_TEMP_EDIT:     UI_DrawTempEdit(); break;
             case SCREEN_TEMP_PID:      UI_DrawTempPid(); break;
-            case SCREEN_TIME_ADJUST:   UI_DrawTimeAdjust(); break;
-            case SCREEN_TIME_EDIT:     UI_DrawTimeEdit(); break;
+            case SCREEN_TIME_ADJUST: {
+                if (g_sys.prev_screen != SCREEN_TIME_EDIT) {
+                    /* 首次进入（来自主界面）：从 dry_time_sec 生成六位数字；
+                     * 从编辑页返回时保持已改的数字，便于继续调整。 */
+                    uint32_t h = g_sys.params.dry_time_sec / 3600;
+                    uint32_t m = (g_sys.params.dry_time_sec % 3600) / 60;
+                    uint32_t s = g_sys.params.dry_time_sec % 60;
+                    g_sys.time_digits[0] = (uint8_t)(h / 10);
+                    g_sys.time_digits[1] = (uint8_t)(h % 10);
+                    g_sys.time_digits[2] = (uint8_t)(m / 10);
+                    g_sys.time_digits[3] = (uint8_t)(m % 10);
+                    g_sys.time_digits[4] = (uint8_t)(s / 10);
+                    g_sys.time_digits[5] = (uint8_t)(s % 10);
+                }
+                if (g_sys.time_cursor >= TIME_DIGIT_COUNT) g_sys.time_cursor = 0;
+                UI_DrawTimeAdjust();
+                break;
+            }
+
+            case SCREEN_TIME_EDIT:   UI_DrawTimeEdit(); break;
             case SCREEN_PTC_ADJUST:    UI_DrawPtcAdjust(); break;
             case SCREEN_PTC_EDIT:      UI_DrawPtcEdit(); break;
             case SCREEN_PTC_COOLING_EDIT: UI_DrawPtcCoolingEdit(); break;
@@ -1034,27 +1253,237 @@ void UI_Update(void)
             case SCREEN_MAIN:
                 UI_UpdateMainDynamic();
                 break;
-            case SCREEN_TEMP_PID:
-                UI_DrawTempPid();
-                break;
-            case SCREEN_PID_AUTOTUNE:
-                UI_DrawPidAutotune();
-                break;
             case SCREEN_OTA:
                 if (g_sys.ota_downloading || g_sys.ota_download_done) UI_DrawOTAScreen();
                 break;
             case SCREEN_MENU: {
-                /* 旋转改变选中项时只重绘旧/新两行，不整屏刷新 */
+                /* 旋转改变选中项时只重绘旧/新两行+滚动条，ScrollOffset 变化时全屏重绘 */
                 static uint8_t last_menu_sel = 0xFF;
+                static uint8_t last_menu_so = 0xFF;
                 uint8_t cur = g_sys.selected_item;
-                if (cur != last_menu_sel) {
+                uint8_t so = g_sys.scroll_offset;
+                if (so != last_menu_so) {
+                    last_menu_so = so;
+                    last_menu_sel = cur;
+                    UI_DrawMenu();
+                } else if (cur != last_menu_sel) {
                     if (last_menu_sel < MENU_ITEM_COUNT) UI_RefreshMenuSel(last_menu_sel, cur);
                     last_menu_sel = cur;
+                    draw_scrollbar(MENU_ITEM_COUNT, 5, cur, (so == 0) ? 28 : 0, (so == 0) ? 100 : 135);
                 }
                 break;
             }
             default:
+            /* 子页面：仅当该页面相关状态变化时才重绘，避免每 50ms 整屏刷新闪烁 */
+            {
+                static uint8_t last_sel = 0xFF;
+                static uint8_t last_so = 0xFF;
+                static Screen_t last_scr = (Screen_t)0xFF;
+                static uint8_t last_tc = 0xFF;
+                static uint32_t last_dry = 0xFFFFFFFF;
+                static uint16_t last_ptc_max = 0xFFFF;
+                static uint16_t last_ptc_cool = 0xFFFF;
+                static uint16_t last_target = 0xFFFF;
+                static uint8_t last_wifi = 0xFF;
+                static uint8_t last_pid_prog = 0xFF;
+                static uint8_t last_auto_prog = 0xFF;
+                uint8_t redraw = 0;
+                if (g_sys.current_screen != last_scr) {
+                    redraw = 1;
+                    last_scr = g_sys.current_screen;
+                    /* 重置各页面状态标记，保证首次进入时重绘 */
+                    last_sel = 0xFF; last_so = 0xFF; last_tc = 0xFF; last_dry = 0xFFFFFFFF;
+                    last_ptc_max = 0xFFFF; last_ptc_cool = 0xFFFF;
+                    last_target = 0xFFFF; last_wifi = 0xFF;
+                    last_pid_prog = 0xFF; last_auto_prog = 0xFF;
+                }
+                switch (g_sys.current_screen) {
+                    case SCREEN_TEMP_ADJUST: {
+                        static uint8_t last_ta_sel = 0xFF;
+                        static uint16_t last_ta_temp = 0xFFFF;
+                        if (!redraw && g_sys.selected_item != last_ta_sel) {
+                            uint8_t old = last_ta_sel;
+                            last_ta_sel = g_sys.selected_item;
+                            if (old < 3) refresh_temp_adj_sel(old, g_sys.selected_item);
+                        }
+                        last_ta_sel = g_sys.selected_item;
+                        if (!redraw && (uint16_t)g_sys.params.target_temp != last_ta_temp) {
+                            last_ta_temp = (uint16_t)g_sys.params.target_temp;
+                            char buf[16];
+                            sprintf(buf, "%d", g_sys.params.target_temp);
+                            draw_val_deg(42, buf, UI_WARN);
+                        }
+                        break;
+                    }
+                    case SCREEN_PTC_ADJUST: {
+                        static uint8_t last_pa_sel = 0xFF;
+                        static uint16_t last_pa_max = 0xFFFF;
+                        static uint16_t last_pa_cool = 0xFFFF;
+                        if (!redraw && g_sys.selected_item != last_pa_sel) {
+                            uint8_t old = last_pa_sel;
+                            last_pa_sel = g_sys.selected_item;
+                            if (old < 4) refresh_ptc_adj_sel(old, g_sys.selected_item);
+                        }
+                        last_pa_sel = g_sys.selected_item;
+                        if (!redraw && (uint16_t)g_sys.params.ptc_max_temp != last_pa_max) {
+                            last_pa_max = (uint16_t)g_sys.params.ptc_max_temp;
+                            char buf[16];
+                            sprintf(buf, "%d", g_sys.params.ptc_max_temp);
+                            draw_val_deg(42, buf, COLOR_RED);
+                        }
+                        if (!redraw && (uint16_t)g_sys.params.ptc_cooling_temp != last_pa_cool) {
+                            last_pa_cool = (uint16_t)g_sys.params.ptc_cooling_temp;
+                            char buf[16];
+                            sprintf(buf, "%d", g_sys.params.ptc_cooling_temp);
+                            draw_val_deg(60, buf, COLOR_CYAN);
+                        }
+                        break;
+                    }
+                    case SCREEN_WEIGHT: {
+                        static uint8_t last_wt_sel = 0xFF;
+                        if (!redraw && g_sys.selected_item != last_wt_sel) {
+                            uint8_t old = last_wt_sel;
+                            last_wt_sel = g_sys.selected_item;
+                            if (old < 2) refresh_weight_sel(old, g_sys.selected_item);
+                        }
+                        last_wt_sel = g_sys.selected_item;
+                        break;
+                    }
+                    case SCREEN_MOTOR_ADJUST:
+                        if (g_sys.selected_item != last_sel || g_sys.scroll_offset != last_so) {
+                            redraw = 1; last_sel = g_sys.selected_item; last_so = g_sys.scroll_offset;
+                        }
+                        break;
+                    case SCREEN_ABOUT:
+                        if (g_sys.selected_item != last_sel) { redraw = 1; last_sel = g_sys.selected_item; }
+                        break;
+                    case SCREEN_TEMP_EDIT:
+                        if (g_sys.selected_item != last_sel) { redraw = 1; last_sel = g_sys.selected_item; }
+                        if ((uint16_t)g_sys.params.target_temp != last_target) {
+                            last_target = (uint16_t)g_sys.params.target_temp;
+                            if (!redraw) {
+                                char buf[16];
+                                sprintf(buf, "%d", g_sys.params.target_temp);
+                                TFT_DrawString(30, 70, buf, COLOR_ORANGE, UI_BG, 4);
+                                draw_degree(90, 72, COLOR_ORANGE, 2);
+                            }
+                        }
+                        break;
+                    case SCREEN_TIME_ADJUST:
+                        if (!redraw && g_sys.time_cursor != last_tc) {
+                            uint8_t oldc = last_tc;
+                            if (oldc < TIME_DIGIT_COUNT) refr_time_digit(oldc, COLOR_CYAN, UI_ACCENT2);
+                            if (g_sys.time_cursor < TIME_DIGIT_COUNT) refr_time_digit(g_sys.time_cursor, COLOR_CYAN, UI_ACCENT2);
+                            last_tc = g_sys.time_cursor;
+                        } else {
+                            last_tc = g_sys.time_cursor;
+                        }
+                        break;
+                    case SCREEN_TIME_EDIT: {
+                        static uint32_t last_dig_hash = 0;
+                        uint32_t dig_hash = (uint32_t)g_sys.time_digits[0] | ((uint32_t)g_sys.time_digits[1] << 4) |
+                                            ((uint32_t)g_sys.time_digits[2] << 8) | ((uint32_t)g_sys.time_digits[3] << 12) |
+                                            ((uint32_t)g_sys.time_digits[4] << 16) | ((uint32_t)g_sys.time_digits[5] << 20);
+                        if (!redraw) {
+                            if (g_sys.time_cursor != last_tc) {
+                                uint8_t oldc = last_tc;
+                                if (oldc < 6) refr_time_digit(oldc, UI_TEXT, COLOR_YELLOW);
+                                refr_time_digit(g_sys.time_cursor, UI_TEXT, COLOR_YELLOW);
+                            }
+                            if (dig_hash != last_dig_hash) {
+                                refr_time_digit(g_sys.time_cursor, UI_TEXT, COLOR_YELLOW);
+                            }
+                        }
+                        last_tc = g_sys.time_cursor;
+                        last_dig_hash = dig_hash;
+                        break;
+                    }
+                    case SCREEN_PTC_EDIT:
+                        if (g_sys.selected_item != last_sel) { redraw = 1; last_sel = g_sys.selected_item; }
+                        if ((uint16_t)g_sys.params.ptc_max_temp != last_ptc_max) {
+                            last_ptc_max = (uint16_t)g_sys.params.ptc_max_temp;
+                            if (!redraw) {
+                                char buf[16];
+                                sprintf(buf, "%d", g_sys.params.ptc_max_temp);
+                                TFT_DrawString(30, 70, buf, COLOR_RED, UI_BG, 4);
+                                draw_degree(90, 72, COLOR_RED, 2);
+                            }
+                        }
+                        break;
+                    case SCREEN_PTC_COOLING_EDIT:
+                        if (g_sys.selected_item != last_sel) { redraw = 1; last_sel = g_sys.selected_item; }
+                        if ((uint16_t)g_sys.params.ptc_cooling_temp != last_ptc_cool) {
+                            last_ptc_cool = (uint16_t)g_sys.params.ptc_cooling_temp;
+                            if (!redraw) {
+                                char buf[16];
+                                sprintf(buf, "%d", g_sys.params.ptc_cooling_temp);
+                                TFT_DrawString(30, 70, buf, COLOR_CYAN, UI_BG, 4);
+                                draw_degree(90, 72, COLOR_CYAN, 2);
+                            }
+                        }
+                        break;
+                    case SCREEN_MOTOR_EDIT:
+                        if (g_sys.selected_item != last_sel) { redraw = 1; last_sel = g_sys.selected_item; }
+                        break;
+                    case SCREEN_WIFI:
+                        if (g_sys.selected_item != last_sel) { redraw = 1; last_sel = g_sys.selected_item; }
+                        if (g_sys.wifi_enabled != last_wifi) { redraw = 1; last_wifi = g_sys.wifi_enabled; }
+                        break;
+                    case SCREEN_TEMP_PID:
+                        if (g_sys.temp_pid_progress != last_pid_prog) { redraw = 1; last_pid_prog = g_sys.temp_pid_progress; }
+                        break;
+                    case SCREEN_PID_AUTOTUNE:
+                        if (g_sys.pid_autotune_progress != last_auto_prog) { redraw = 1; last_auto_prog = g_sys.pid_autotune_progress; }
+                        break;
+                    case SCREEN_SAFETY_ALERT:
+                        break;
+                    case SCREEN_SETTINGS: {
+                        static uint8_t last_ss_sel = 0xFF;
+                        static uint8_t last_ss_so = 0xFF;
+                        static uint8_t last_ss_bv = 0xFF;
+                        static uint8_t last_ss_bl = 0xFF;
+                        if (g_sys.scroll_offset != last_ss_so) {
+                            last_ss_so = g_sys.scroll_offset;
+                            UI_DrawSettingsScreen();
+                        } else if (!redraw && g_sys.selected_item != last_ss_sel) {
+                            last_ss_sel = g_sys.selected_item;
+                            UI_DrawSettingsScreen();
+                        }
+                        last_ss_sel = g_sys.selected_item;
+                        if (!redraw) {
+                            if (g_sys.buzzer_vol != last_ss_bv || g_sys.backlight != last_ss_bl) {
+                                last_ss_bv = g_sys.buzzer_vol;
+                                last_ss_bl = g_sys.backlight;
+                                UI_RefreshSettingsValue();
+                            }
+                        }
+                        break;
+                    }
+                    default: break;
+                }
+                if (redraw) {
+                    switch (g_sys.current_screen) {
+                        case SCREEN_WEIGHT:        UI_DrawWeightScreen(); break;
+                        case SCREEN_TEMP_ADJUST:   UI_DrawTempAdjust(); break;
+                        case SCREEN_TEMP_EDIT:     UI_DrawTempEdit(); break;
+                        case SCREEN_TIME_ADJUST:   UI_DrawTimeAdjust(); break;
+                        case SCREEN_TIME_EDIT:     UI_DrawTimeEdit(); break;
+                        case SCREEN_PTC_ADJUST:    UI_DrawPtcAdjust(); break;
+                        case SCREEN_PTC_EDIT:      UI_DrawPtcEdit(); break;
+                        case SCREEN_PTC_COOLING_EDIT: UI_DrawPtcCoolingEdit(); break;
+                        case SCREEN_MOTOR_ADJUST:  UI_DrawMotorAdjust(); break;
+                        case SCREEN_MOTOR_EDIT:    UI_DrawMotorEdit(); break;
+                        case SCREEN_ABOUT:         UI_DrawAbout(); break;
+                        case SCREEN_WIFI:          UI_DrawWiFiScreen(); break;
+                        case SCREEN_TEMP_PID:      UI_DrawTempPid(); break;
+                        case SCREEN_PID_AUTOTUNE:  UI_DrawPidAutotune(); break;
+case SCREEN_SAFETY_ALERT:  UI_DrawSafetyAlert(); break;
+                        case SCREEN_SETTINGS:       UI_DrawSettingsScreen(); break;
+                        default: break;
+                    }
+                }
                 break;
+            }
         }
     }
 }
@@ -1071,7 +1500,18 @@ void UI_UpdateMainDynamic(void)
     const uint16_t c2x = left + card_w + gap;
     uint16_t cy;
     static char last_val[4][32];
-    static uint8_t last_sel = 0xFF;
+    static uint8_t last_state = 0xFF;
+
+    /* 烘干状态变化时只重绘时间栏的状态文字，不整卡重绘；IDLE 时不显示文字 */
+    if ((uint8_t)g_sys.run_state != last_state) {
+        last_state = (uint8_t)g_sys.run_state;
+        static const char *sstr[] = {"停止烘干","开始烘干","开始烘干","开始烘干","停止烘干","停止烘干"};
+        static const uint16_t scol[] = {UI_TEXT_DIM, UI_ACCENT2, UI_WARN, UI_ACCENT, UI_ACCENT, UI_OK};
+        uint16_t fill = (g_sys.selected_item == 4) ? UI_CARD_HI : CARD_BG_TIME;
+        const char *s = sstr[g_sys.run_state];
+        TFT_FillRect(166, 109, 70, 18, fill);
+        TFT_DrawStringZh(166, 109, s, scol[g_sys.run_state], fill);
+    }
 
     /* TEMP 卡（行1 左）：值 + °C，选中卡用高亮底色 */
     sprintf(buf, "%.1f", g_sys.current_temp);
@@ -1109,26 +1549,8 @@ void UI_UpdateMainDynamic(void)
         strcpy(last_val[3], buf);
     }
 
-    /* 选中变化时：值文字底色随选中态切换（重绘全部值，消除旧底色残留） */
-    if (g_sys.selected_item != last_sel) {
-        last_sel = g_sys.selected_item;
-        sprintf(buf, "%.1f", g_sys.current_temp);
-        draw_value_unit(0, left, top, card_h,
-                        (g_sys.selected_item == 0) ? UI_CARD_HI : CARD_BG_TEMP,
-                        buf, UI_WARN);
-        sprintf(buf, "%.1f%%", g_sys.current_humidity);
-        draw_value_unit(1, c2x, top, card_h,
-                        (g_sys.selected_item == 1) ? UI_CARD_HI : CARD_BG_HUMI,
-                        buf, UI_CYAN);
-        sprintf(buf, "%.1f", g_sys.weight_g);
-        draw_value_unit(2, left, top + card_h + gap, card_h,
-                        (g_sys.selected_item == 2) ? UI_CARD_HI : CARD_BG_WEIGHT,
-                        buf, UI_PURPLE);
-        sprintf(buf, "%.1f", g_sys.ptc_temp);
-        draw_value_unit(3, c2x, top + card_h + gap, card_h,
-                        (g_sys.selected_item == 3) ? UI_CARD_HI : CARD_BG_PTC,
-                        buf, UI_ACCENT2);
-    }
+    /* 选中变化时仅由主循环 UI_RefreshCard(old/new) 重绘两张卡片，
+     * 不再整卡刷值，避免光标移动时全部数值闪一次。 */
 
     /* 烘干时间栏（底部，时间数字垂直居中）。
      * 仅在时间值变化时重绘——TFT_DrawChar 每字符先填底再画前景，
@@ -1156,26 +1578,21 @@ void UI_UpdateMainDynamic(void)
             h = g_sys.remaining_sec / 3600;
             m = (g_sys.remaining_sec % 3600) / 60;
             s = g_sys.remaining_sec % 60;
-            sprintf(buf, "REM %02lu:%02lu:%02lu", h, m, s);
+            sprintf(buf, "剩余%02lu:%02lu:%02lu", h, m, s);
             if (strcmp(buf, last_rem_str) != 0) {
                 strcpy(last_rem_str, buf);
-                TFT_DrawString(left + (224U - 16U * 6U) / 2U, cy + 20, buf, UI_OK,
-                               rem_bg, 1);
+                uint16_t rem_w = zh_str_width(buf);
+                TFT_FillRect(left + (224U - rem_w) / 2U, cy + 18, rem_w, 16U, rem_bg);
+                TFT_DrawStringZh(left + (224U - rem_w) / 2U, cy + 18, buf, UI_OK, rem_bg);
             }
             rem_was_drawing = 1;
         } else if (rem_was_drawing) {
             last_rem_str[0] = '\0';
-            TFT_FillRect(left + (224U - 16U * 6U) / 2U, cy + 20, 16U * 6U, 8U, rem_bg);
+            TFT_FillRect(left + (224U - 16U * 12U) / 2U, cy + 18, 16U * 12U, 16U, rem_bg);
+            TFT_FillRect(left, cy + 18, 224U, 16U, rem_bg);
             rem_was_drawing = 0;
         }
     }
-
-    /* 选中卡呼吸动画（局部色条） */
-    draw_card_pulse(left, top, card_w, g_sys.selected_item == 0);
-    draw_card_pulse(c2x, top, card_w, g_sys.selected_item == 1);
-    draw_card_pulse(left, top + card_h + gap, card_w, g_sys.selected_item == 2);
-    draw_card_pulse(c2x, top + card_h + gap, card_w, g_sys.selected_item == 3);
-    draw_card_pulse(left, cy, 224, g_sys.selected_item == 4);
 }
 
 static void Delay_ms(uint16_t ms)

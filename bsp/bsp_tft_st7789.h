@@ -39,6 +39,8 @@ typedef enum {
 
 TftStatus_t TFT_Init(void);
 void TFT_SetBacklight(uint8_t brightness);
+void TFT_SetBrightness(uint8_t pct);
+void Backlight_Init(void);
 TftStatus_t TFT_FillScreen(uint16_t color);
 /* RGB565 位图绘制：bitmap 为 RGB565 像素数组（高字节在前），
  * 遇 transparent 颜色像素则填充 background（实现透明效果）。 */
@@ -53,6 +55,8 @@ TftStatus_t TFT_DrawChar(uint16_t x, uint16_t y, char character,
                          uint16_t color, uint16_t background, uint8_t scale);
 TftStatus_t TFT_DrawString(uint16_t x, uint16_t y, const char *text,
                            uint16_t color, uint16_t background, uint8_t scale);
+TftStatus_t TFT_DrawStringZh(uint16_t x, uint16_t y, const char *text,
+                             uint16_t color, uint16_t background);
 TftStatus_t TFT_DrawProgress(uint16_t x, uint16_t y,
                              uint16_t width, uint16_t height,
                              uint8_t percent,

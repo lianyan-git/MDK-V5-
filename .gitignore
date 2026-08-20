@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # ---- build outputs ----
 build/
 Objects/
@@ -29,23 +28,9 @@ Objects/
 *.log
 .eide/log
 
+# ---- Keil 命令行构建日志 ----
+build_log.txt
+
 # ---- misc ----
 Thumbs.db
 Desktop.ini
-=======
-# dot files
-/.vscode/launch.json
-/.settings
-/.eide/log
-/.eide.usr.ctx.json
-
-# project out
-/build
-/bin
-/obj
-/out
-
-# eide template
-*.ept
-*.eide-template
->>>>>>> origin/main

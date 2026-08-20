@@ -43,6 +43,33 @@ void TftPort_SetBacklight(int enabled)
     else GPIO_ResetBits(PIN_TFT_BL_PORT, PIN_TFT_BL_PIN);
 }
 
+/* 背光 PWM 初始化（TIM3_CH3，与蜂鸣器共用 TIM3 时基） */
+void Backlight_Init(void)
+{
+    GPIO_InitTypeDef g;
+    /* PB0 从 GPIO 改为 AF_PP，由 TIM3_CH3 驱动 */
+    g.GPIO_Pin = PIN_TFT_BL_PIN;
+    g.GPIO_Mode = GPIO_Mode_AF_PP;
+    g.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(PIN_TFT_BL_PORT, &g);
+
+    TIM_OCInitTypeDef o;
+    o.TIM_OCMode = TIM_OCMode_PWM1;
+    o.TIM_OutputState = TIM_OutputState_Enable;
+    o.TIM_Pulse = 0;
+    o.TIM_OCPolarity = TIM_OCPolarity_High;
+    TIM_OC3Init(TIM3, &o);
+    TIM_OC3PreloadConfig(TIM3, TIM_OCPreload_Enable);
+}
+
+/* 设置背光亮度 0-100（PWM 占空比） */
+void TFT_SetBrightness(uint8_t pct)
+{
+    uint16_t pulse = (uint16_t)((uint32_t)pct * 10U);
+    if (pulse > 999) pulse = 999;
+    TIM_SetCompare3(TIM3, pulse);
+}
+
 void TftPort_DelayMs(uint32_t delay_ms)
 {
     volatile uint32_t count;

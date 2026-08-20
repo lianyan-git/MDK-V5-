@@ -15,7 +15,7 @@
 #define TIME_DEFAULT_SEC        7200
 
 #define PTC_TEMP_MIN            40
-#define PTC_TEMP_MAX            120
+#define PTC_TEMP_MAX            160
 #define PTC_TEMP_DEFAULT        70
 #define PTC_COOLING_TEMP_DEFAULT 40
 #define PTC_TEMP_RISE_MAX       80
@@ -51,20 +51,26 @@ typedef enum {
     SCREEN_WIFI,
     SCREEN_OTA,
     SCREEN_SAFETY_ALERT,
+    SCREEN_SETTINGS,
 } Screen_t;
 
 typedef enum {
     STATE_IDLE,
     STATE_HEATING,
     STATE_DRYING,
+    STATE_PAUSED,
     STATE_COOLING,
     STATE_COMPLETE,
 } RunState_t;
 
 typedef enum {
-    TIME_FIELD_HOUR,
-    TIME_FIELD_MIN,
-    TIME_FIELD_SEC,
+    TIME_DIGIT_H1,
+    TIME_DIGIT_H2,
+    TIME_DIGIT_M1,
+    TIME_DIGIT_M2,
+    TIME_DIGIT_S1,
+    TIME_DIGIT_S2,
+    TIME_DIGIT_COUNT,
 } TimeField_t;
 
 typedef enum {
@@ -141,6 +147,13 @@ typedef struct {
     float chamber_temp_last;
     uint32_t temp_stuck_start;
     uint8_t drying_active;
+    uint8_t time_digits[6];
+    uint8_t buzzer_link;    /* 0=关 1=开 */
+    uint8_t buzzer_vol;     /* 0-10 */
+    uint8_t light_switch;   /* 0=关 1=开 */
+    uint8_t backlight;      /* 0-100 */
+    uint8_t theme;          /* 0=亮色 1=暗色 */
+    uint8_t scroll_offset;  /* 翻页滚动偏移 */
 } SystemState_t;
 
 extern SystemState_t g_sys;
@@ -152,5 +165,7 @@ void System_SaveParams(void);
 uint32_t System_GetDeviceId(void);
 void StartDrying(void);
 void StopDrying(void);
+void PauseDrying(void);
+void ResumeDrying(void);;
 
 #endif
