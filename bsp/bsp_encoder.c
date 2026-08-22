@@ -190,109 +190,19 @@ void Encoder_Process(void)
         last_proc_screen = g_sys.current_screen;
     }
 
-    /* 全局长按：除特殊页面外，长按一律退回主界面 */
-if (evt == ENC_EVT_LONG_PRESS) {
-        switch (g_sys.current_screen) {
-            case SCREEN_MAIN:
-            case SCREEN_MENU:
-            case SCREEN_TIME_ADJUST:
-            case SCREEN_TIME_EDIT:
-            case SCREEN_SAFETY_ALERT:
-                break;  /* 这些页面有各自的长按处理 */
-            case SCREEN_ABOUT:
-                g_sys.current_screen = SCREEN_MENU;
-                g_sys.selected_item = 0;
-                return;
-            default:
-                g_sys.current_screen = SCREEN_MAIN;
-                g_sys.selected_item = 0;
-                return;
+    if (evt == ENC_EVT_LONG_PRESS) {
+        if (g_sys.current_screen == SCREEN_TIME_ADJUST) {
+            g_sys.selected_item = 0; g_sys.current_screen = SCREEN_MAIN;
         }
+        return;
     }
 
     switch (g_sys.current_screen) {
 
-case SCREEN_MAIN:
-        if (evt == ENC_EVT_CW) g_sys.selected_item = (g_sys.selected_item + 1) % 5;
-        else if (evt == ENC_EVT_CCW) g_sys.selected_item = (g_sys.selected_item == 0) ? 4 : g_sys.selected_item - 1;
-        else if (evt == ENC_EVT_CLICK) {
-            if (g_sys.selected_item == 0) g_sys.current_screen = SCREEN_TEMP_ADJUST;
-            else if (g_sys.selected_item == 2) { g_sys.selected_item = 0; g_sys.current_screen = SCREEN_WEIGHT; }
-            else if (g_sys.selected_item == 3) g_sys.current_screen = SCREEN_PTC_ADJUST;
-            else if (g_sys.selected_item == 4) g_sys.current_screen = SCREEN_TIME_ADJUST;
-        }
-        else if (evt == ENC_EVT_LONG_PRESS && g_sys.selected_item == 1) {
-            /* 湿度卡：长按切换开始/停止（仅一次/每次按压，btn_down 复位时自动重置） */
-            static uint8_t hum_last = 0;
-            if (btn_down == 0) hum_last = 0;
-            if (btn_down != hum_last) {
-                hum_last = btn_down;
-                if (g_sys.drying_active) StopDrying();
-                else StartDrying();
-            }
-        }
-        break;
-
-    case SCREEN_WEIGHT:
-        if (evt == ENC_EVT_CW) g_sys.selected_item = (g_sys.selected_item + 1) % 2;
-        else if (evt == ENC_EVT_CCW) g_sys.selected_item = (g_sys.selected_item == 0) ? 1 : 0;
-        else if (evt == ENC_EVT_CLICK) {
-            if (g_sys.selected_item == 0) { CS1237_Tare(); g_sys.weight_g = 0.0f; }
-            else { g_sys.selected_item = 0; g_sys.current_screen = SCREEN_MAIN; }
-        }
-        break;
-
-    case SCREEN_TEMP_ADJUST:
-        if (g_sys.temp_edit_active) {
-            if (evt == ENC_EVT_CW || evt == ENC_EVT_CCW) {
-                int8_t step = (enc_accel_step > 5) ? 5 : (int8_t)enc_accel_step;
-                int16_t v = (int16_t)g_sys.params.target_temp + ((evt == ENC_EVT_CW) ? step : -step);
-                if (v < TEMP_MIN) v = TEMP_MIN; else if (v > TEMP_MAX) v = TEMP_MAX;
-                g_sys.params.target_temp = (uint16_t)v;
-            } else if (evt == ENC_EVT_CLICK) { g_sys.temp_edit_active = 0; }
-        } else {
-            if (evt == ENC_EVT_CW) g_sys.selected_item = (g_sys.selected_item + 1) % 3;
-            else if (evt == ENC_EVT_CCW) g_sys.selected_item = (g_sys.selected_item == 0) ? 2 : g_sys.selected_item - 1;
-            else if (evt == ENC_EVT_CLICK) {
-                if (g_sys.selected_item == 0) { g_sys.temp_edit_active = 1; }
-                else if (g_sys.selected_item == 1) {
-                    g_sys.temp_pid_running = 1; g_sys.temp_pid_progress = 0;
-                    PTC_TempPID_AutotuneStart((float)g_sys.params.target_temp);
-                    g_sys.current_screen = SCREEN_TEMP_PID;
-                }
-                else { g_sys.selected_item = 0; g_sys.current_screen = SCREEN_MAIN; }
-            }
-        }
-        break;
-
-    case SCREEN_TEMP_EDIT:
-        if (evt == ENC_EVT_CW || evt == ENC_EVT_CCW) {
-            int8_t step = (enc_accel_step > 5) ? 5 : (int8_t)enc_accel_step;
-            int16_t v = (int16_t)g_sys.params.target_temp + ((evt == ENC_EVT_CW) ? step : -step);
-            if (v < TEMP_MIN) v = TEMP_MIN; else if (v > TEMP_MAX) v = TEMP_MAX;
-            g_sys.params.target_temp = (uint16_t)v;
-        } else if (evt == ENC_EVT_CLICK) {
-            if (g_sys.selected_item == 0) { System_SaveParams(); g_sys.current_screen = SCREEN_TEMP_ADJUST; }
-            else g_sys.current_screen = SCREEN_TEMP_ADJUST;
-        }
-        break;
-
-    case SCREEN_TEMP_PID:
-        if (evt == ENC_EVT_CLICK) g_sys.current_screen = SCREEN_TEMP_ADJUST;
-        break;
-
     case SCREEN_TIME_ADJUST:
-        if (evt == ENC_EVT_CW) {
-            g_sys.time_cursor = (g_sys.time_cursor + 1) % TIME_DIGIT_COUNT;
-        } else if (evt == ENC_EVT_CCW) {
-            g_sys.time_cursor = (g_sys.time_cursor == 0) ? (TIME_DIGIT_COUNT - 1) : (g_sys.time_cursor - 1);
-        } else if (evt == ENC_EVT_CLICK) {  /* 单击：进入当前位编辑 */
-            time_init_digits();
-            g_sys.current_screen = SCREEN_TIME_EDIT;
-        } else if (evt == ENC_EVT_LONG_PRESS) {  /* 长按：退回主界面，不保存 */
-            g_sys.selected_item = 0;
-            g_sys.current_screen = SCREEN_MAIN;
-        }
+        if (evt == ENC_EVT_CW) { if (g_sys.time_cursor < 5) g_sys.time_cursor++; else g_sys.time_cursor = 0; }
+        else if (evt == ENC_EVT_CCW) { if (g_sys.time_cursor > 0) g_sys.time_cursor--; else g_sys.time_cursor = 5; }
+        else if (evt == ENC_EVT_CLICK) { g_sys.selected_item = 0; g_sys.current_screen = SCREEN_TIME_EDIT; }
         break;
 
     case SCREEN_TIME_EDIT: {
@@ -301,188 +211,22 @@ case SCREEN_MAIN:
             int8_t delta = (evt == ENC_EVT_CW) ? 1 : -1;
             uint8_t cur = g_sys.time_cursor;
             int16_t new_val = (int16_t)g_sys.time_digits[cur] + delta;
-            if (new_val < 0) new_val = max_d[cur];
+            if (new_val < 0) new_val = (int16_t)max_d[cur];
             else if (new_val > (int16_t)max_d[cur]) new_val = 0;
             g_sys.time_digits[cur] = (uint8_t)new_val;
-        } else if (evt == ENC_EVT_CLICK) {  /* 单击：保存并退出当前参数，回调整页 */
+        } else if (evt == ENC_EVT_CLICK) {
             time_commit();
             g_sys.current_screen = SCREEN_TIME_ADJUST;
-        } else if (evt == ENC_EVT_LONG_PRESS) {  /* 长按：退回主界面，修改不保存 */
+        } else if (evt == ENC_EVT_LONG_PRESS) {
             g_sys.selected_item = 0;
             g_sys.current_screen = SCREEN_MAIN;
         }
         break;
     }
 
-    case SCREEN_PTC_ADJUST:
-        if (g_sys.ptc_edit_active) {
-            if (evt == ENC_EVT_CW || evt == ENC_EVT_CCW) {
-                int8_t step = (enc_accel_step > 5) ? 5 : (int8_t)enc_accel_step;
-                int8_t delta = (evt == ENC_EVT_CW) ? step : -step;
-                if (g_sys.selected_item == 0) {
-                    int16_t v = (int16_t)g_sys.params.ptc_max_temp + delta;
-                    if (v < PTC_TEMP_MIN) v = PTC_TEMP_MIN; else if (v > PTC_TEMP_MAX) v = PTC_TEMP_MAX;
-                    g_sys.params.ptc_max_temp = (uint16_t)v;
-                } else if (g_sys.selected_item == 1) {
-                    int16_t v = (int16_t)g_sys.params.ptc_cooling_temp + delta;
-                    if (v < 30) v = 30; else if (v > (int16_t)g_sys.params.ptc_max_temp) v = (int16_t)g_sys.params.ptc_max_temp;
-                    g_sys.params.ptc_cooling_temp = (uint16_t)v;
-                }
-            } else if (evt == ENC_EVT_CLICK) { g_sys.ptc_edit_active = 0; }
-        } else {
-            if (evt == ENC_EVT_CW) g_sys.selected_item = (g_sys.selected_item + 1) % 4;
-            else if (evt == ENC_EVT_CCW) g_sys.selected_item = (g_sys.selected_item == 0) ? 3 : g_sys.selected_item - 1;
-            else if (evt == ENC_EVT_CLICK) {
-                if (g_sys.selected_item == 0) { g_sys.ptc_edit_active = 1; }
-                else if (g_sys.selected_item == 1) { g_sys.ptc_edit_active = 1; }
-                else if (g_sys.selected_item == 2) {
-                    g_sys.pid_autotune_running = 1; g_sys.pid_autotune_progress = 0;
-                    PTC_PID_AutotuneStart();
-                    g_sys.current_screen = SCREEN_PID_AUTOTUNE;
-                }
-                else { g_sys.selected_item = 0; g_sys.current_screen = SCREEN_MAIN; }
-            }
-        }
+    default:
         break;
-
-    case SCREEN_PTC_EDIT:
-        if (evt == ENC_EVT_CW || evt == ENC_EVT_CCW) {
-            int8_t step = (enc_accel_step > 5) ? 5 : (int8_t)enc_accel_step;
-            int16_t v = (int16_t)g_sys.params.ptc_max_temp + ((evt == ENC_EVT_CW) ? step : -step);
-            if (v < PTC_TEMP_MIN) v = PTC_TEMP_MIN; else if (v > PTC_TEMP_MAX) v = PTC_TEMP_MAX;
-            g_sys.params.ptc_max_temp = (uint16_t)v;
-        } else if (evt == ENC_EVT_CLICK) {
-            if (g_sys.selected_item == 0) { System_SaveParams(); g_sys.current_screen = SCREEN_PTC_ADJUST; }
-            else g_sys.current_screen = SCREEN_PTC_ADJUST;
-        }
-        break;
-
-    case SCREEN_PTC_COOLING_EDIT:
-        if (evt == ENC_EVT_CW || evt == ENC_EVT_CCW) {
-            int8_t step = (enc_accel_step > 5) ? 5 : (int8_t)enc_accel_step;
-            int16_t v = (int16_t)g_sys.params.ptc_cooling_temp + ((evt == ENC_EVT_CW) ? step : -step);
-            if (v < 30) v = 30; else if (v > (int16_t)g_sys.params.ptc_max_temp) v = (int16_t)g_sys.params.ptc_max_temp;
-            g_sys.params.ptc_cooling_temp = (uint16_t)v;
-        } else if (evt == ENC_EVT_CLICK) {
-            if (g_sys.selected_item == 0) { System_SaveParams(); g_sys.current_screen = SCREEN_PTC_ADJUST; }
-            else g_sys.current_screen = SCREEN_PTC_ADJUST;
-        }
-        break;
-
-    case SCREEN_PID_AUTOTUNE:
-        if (evt == ENC_EVT_CLICK) g_sys.current_screen = SCREEN_PTC_ADJUST;
-        break;
-
-    case SCREEN_MENU:
-        if (evt == ENC_EVT_CW) g_sys.selected_item = (g_sys.selected_item + 1) % 6;
-        else if (evt == ENC_EVT_CCW) g_sys.selected_item = (g_sys.selected_item == 0) ? 5 : g_sys.selected_item - 1;
-        if (evt == ENC_EVT_CW || evt == ENC_EVT_CCW) {
-            uint8_t pp = 5;
-            if (g_sys.selected_item >= g_sys.scroll_offset + pp) g_sys.scroll_offset = g_sys.selected_item - pp + 1;
-            if (g_sys.selected_item < g_sys.scroll_offset) g_sys.scroll_offset = g_sys.selected_item;
-        } else if (evt == ENC_EVT_CLICK) {
-            if (g_sys.selected_item == 0) g_sys.current_screen = SCREEN_WIFI;
-            else if (g_sys.selected_item == 1) { g_sys.selected_item = 0; g_sys.current_screen = SCREEN_MOTOR_ADJUST; }
-            else if (g_sys.selected_item == 2) { g_sys.device_id = System_GetDeviceId(); g_sys.current_screen = SCREEN_ABOUT; }
-            else if (g_sys.selected_item == 3) { g_sys.current_screen = SCREEN_SETTINGS; }
-            else if (g_sys.selected_item == 4) NVIC_SystemReset();
-            else { g_sys.selected_item = 0; g_sys.current_screen = SCREEN_MAIN; }
-        }
-        break;
-
-    case SCREEN_MOTOR_ADJUST:
-    {
-        uint8_t count = (g_sys.params.motor_driver == MOTOR_DRIVER_TMC2209) ? 9 : 7;
-        if (evt == ENC_EVT_CW) g_sys.selected_item = (g_sys.selected_item + 1) % count;
-        else if (evt == ENC_EVT_CCW) g_sys.selected_item = (g_sys.selected_item == 0) ? (count - 1) : g_sys.selected_item - 1;
-        if (evt == ENC_EVT_CW || evt == ENC_EVT_CCW) {
-            uint8_t pp = 5;
-            if (g_sys.selected_item >= g_sys.scroll_offset + pp) g_sys.scroll_offset = g_sys.selected_item - pp + 1;
-            if (g_sys.selected_item < g_sys.scroll_offset) g_sys.scroll_offset = g_sys.selected_item;
-        } else if (evt == ENC_EVT_CLICK) {
-            if (g_sys.selected_item == count - 1) { g_sys.selected_item = 0; g_sys.current_screen = SCREEN_MENU; }
-            else { g_sys.submenu_active = g_sys.selected_item; g_sys.current_screen = SCREEN_MOTOR_EDIT; }
-        }
-        break;
-    }
-
-    case SCREEN_MOTOR_EDIT:
-        if (evt == ENC_EVT_CW) motor_edit_set(g_sys.submenu_active, 1);
-        else if (evt == ENC_EVT_CCW) motor_edit_set(g_sys.submenu_active, 0);
-        else if (evt == ENC_EVT_CLICK) {
-            if (g_sys.selected_item == 0) { System_SaveParams(); g_sys.current_screen = SCREEN_MOTOR_ADJUST; }
-            else g_sys.current_screen = SCREEN_MOTOR_ADJUST;
-        }
-        break;
-
-    case SCREEN_ABOUT:
-        if (evt == ENC_EVT_CLICK) g_sys.current_screen = SCREEN_MENU;
-        break;
-
-    case SCREEN_WIFI:
-        if (evt == ENC_EVT_CW) g_sys.selected_item = (g_sys.selected_item + 1) % 2;
-        else if (evt == ENC_EVT_CCW) g_sys.selected_item = (g_sys.selected_item == 0) ? 1 : 0;
-        else if (evt == ENC_EVT_CLICK) { if (g_sys.selected_item == 0) g_sys.current_screen = SCREEN_MENU; else g_sys.wifi_enabled = !g_sys.wifi_enabled; }
-        break;
-
-    case SCREEN_OTA:
-        if (evt == ENC_EVT_CLICK) g_sys.current_screen = SCREEN_MENU;
-        break;
-
-    case SCREEN_SAFETY_ALERT:
-        if (evt == ENC_EVT_CLICK || evt == ENC_EVT_LONG_PRESS) {
-            g_sys.safety_state = SAFETY_NONE;
-            g_sys.run_state = STATE_IDLE;
-            g_sys.selected_item = 0; g_sys.current_screen = SCREEN_MAIN;
-        }
-        break;
-
-    case SCREEN_SETTINGS: {
-        uint8_t cnt = 6;
-        static uint8_t s_edit = 0;
-        if (s_edit) {
-            if (evt == ENC_EVT_CW || evt == ENC_EVT_CCW) {
-                int8_t delta = (evt == ENC_EVT_CW) ? 1 : -1;
-                if (g_sys.selected_item == 1) {
-                    /* 蜂鸣器音量不加速，步进 1 */
-                    int16_t v = (int16_t)g_sys.buzzer_vol + delta;
-                    if (v < 0) v = 0; else if (v > 10) v = 10;
-                    g_sys.buzzer_vol = (uint8_t)v;
-                } else if (g_sys.selected_item == 3) {
-                    /* 屏幕亮度加速，上限 10 */
-                    int8_t step = (int8_t)enc_accel_step;
-                    int16_t v = (int16_t)g_sys.backlight + delta * step;
-                    if (v < 0) v = 0; else if (v > 100) v = 100;
-                    g_sys.backlight = (uint8_t)v;
-                    TFT_SetBrightness(g_sys.backlight);
-                }
-            } else if (evt == ENC_EVT_CLICK) { s_edit = 0; }
-        } else {
-            if (evt == ENC_EVT_CW) g_sys.selected_item = (g_sys.selected_item + 1) % cnt;
-            else if (evt == ENC_EVT_CCW) g_sys.selected_item = (g_sys.selected_item == 0) ? (cnt - 1) : (g_sys.selected_item - 1);
-            if (evt == ENC_EVT_CW || evt == ENC_EVT_CCW) {
-                uint8_t pp = 5;
-                if (g_sys.selected_item >= g_sys.scroll_offset + pp) g_sys.scroll_offset = g_sys.selected_item - pp + 1;
-                if (g_sys.selected_item < g_sys.scroll_offset) g_sys.scroll_offset = g_sys.selected_item;
-            } else if (evt == ENC_EVT_CLICK) {
-                if (g_sys.selected_item >= 5) g_sys.current_screen = SCREEN_MENU;
-                else if (g_sys.selected_item == 1 || g_sys.selected_item == 3) { s_edit = 1; }
-                else {
-                    switch (g_sys.selected_item) {
-                    case 0: g_sys.buzzer_link = !g_sys.buzzer_link; break;
-                    case 2: g_sys.light_switch = !g_sys.light_switch; break;
-                    case 4: g_sys.theme = !g_sys.theme; theme_apply(); UI_DrawSettingsScreen(); break;
-                    default: break;
-                    }
-                }
-            }
-        }
-        break;
-    }
-
-default:
-        break;
-}
 }
 #endif /* BOOTLOADER_BUILD */
+
 

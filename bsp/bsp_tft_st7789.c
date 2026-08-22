@@ -3,10 +3,6 @@
 #include "bsp_spi1_bus.h"
 #include "bsp_tft_port.h"
 
-#ifndef BOOTLOADER_BUILD
-#include "zh16.h"
-#endif
-
 #include <stddef.h>
 #include <string.h>
 
@@ -341,6 +337,24 @@ TftStatus_t TFT_DrawBitmap(uint16_t x, uint16_t y,
     return result;
 }
 
+TftStatus_t TFT_FlushArea(uint16_t x, uint16_t y,
+                          uint16_t width, uint16_t height,
+                          const uint16_t *pixels)
+{
+    TftStatus_t result;
+    uint32_t row_i;
+    if (pixels == NULL) return TFT_ERROR_ARGUMENT;
+    if (!TFT_ClipRect(&x, &y, &width, &height)) return TFT_ERROR_ARGUMENT;
+    result = begin_transaction();
+    if (result != TFT_OK) return result;
+    result = set_window(x, y, width, height);
+    for (row_i = 0U; (result == TFT_OK) && (row_i < height); ++row_i) {
+        result = write_part_dma((const uint8_t *)&pixels[row_i * width], width * 2U);
+    }
+    end_transaction();
+    return result;
+}
+
 TftStatus_t TFT_DrawPixel(uint16_t x, uint16_t y, uint16_t color)
 {
     return TFT_FillRect(x, y, 1U, 1U, color);
@@ -388,57 +402,6 @@ TftStatus_t TFT_DrawString(uint16_t x, uint16_t y, const char *text,
     }
     return result;
 }
-
-#ifndef BOOTLOADER_BUILD
-/* 中文 16x16 字符串绘制：支持 UTF-8 编码的中文 + ASCII 混排。
- * 中文每字 16x16，ASCII 用 TFT_DrawChar scale 1 (6x8) 绘制并占 16px 宽。 */
-TftStatus_t TFT_DrawStringZh(uint16_t x, uint16_t y, const char *text,
-                             uint16_t color, uint16_t background)
-{
-    TftStatus_t result = TFT_OK;
-    uint8_t i, r, c, idx;
-    uint16_t cp;
-
-    if (text == NULL) return TFT_ERROR_ARGUMENT;
-    while (*text != '\0') {
-        const uint8_t *p = (const uint8_t *)text;
-        if (p[0] >= 0xE0U && p[1] != '\0' && p[2] != '\0') {
-            cp = (uint16_t)(((uint16_t)(p[0] & 0x0FU) << 12) |
-                            ((uint16_t)(p[1] & 0x3FU) << 6) |
-                            (uint16_t)(p[2] & 0x3FU));
-            idx = zh16_index(cp);
-            if (idx != 0xFFU) {
-                result = TFT_FillRect(x, y, 16U, 16U, background);
-                if (result != TFT_OK) return result;
-                for (r = 0U; r < 16U; r++) {
-                    for (c = 0U; c < 16U; c++) {
-                        if ((zh16_data[idx][r * 2U + (c >> 3)] &
-                             (uint8_t)(0x80U >> (c & 7U))) != 0U) {
-                            result = TFT_FillRect((uint16_t)(x + c),
-                                                  (uint16_t)(y + r), 1U, 1U, color);
-                            if (result != TFT_OK) return result;
-                        }
-                    }
-                }
-            } else {
-                TFT_FillRect(x, y, 16U, 16U, background);
-                for (i = 0U; i < 4U; i++) {
-                    TFT_FillRect(x, (uint16_t)(y + i * 4U), 2U, 1U, color);
-                    TFT_FillRect((uint16_t)(x + 14U), (uint16_t)(y + i * 4U), 2U, 1U, color);
-                }
-            }
-            x = (uint16_t)(x + 17U);
-            text += 3;
-        } else {
-            result = TFT_DrawChar(x, y, *text, color, background, 1);
-            if (result != TFT_OK) return result;
-            x = (uint16_t)(x + 16U);
-            ++text;
-        }
-    }
-    return result;
-}
-#endif /* BOOTLOADER_BUILD */
 
 TftStatus_t TFT_DrawProgress(uint16_t x, uint16_t y,
                              uint16_t width, uint16_t height,

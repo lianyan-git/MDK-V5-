@@ -55,12 +55,13 @@ TftStatus_t TFT_DrawChar(uint16_t x, uint16_t y, char character,
                          uint16_t color, uint16_t background, uint8_t scale);
 TftStatus_t TFT_DrawString(uint16_t x, uint16_t y, const char *text,
                            uint16_t color, uint16_t background, uint8_t scale);
-TftStatus_t TFT_DrawStringZh(uint16_t x, uint16_t y, const char *text,
-                             uint16_t color, uint16_t background);
 TftStatus_t TFT_DrawProgress(uint16_t x, uint16_t y,
                              uint16_t width, uint16_t height,
                              uint8_t percent,
                              uint16_t foreground, uint16_t background);
+TftStatus_t TFT_FlushArea(uint16_t x, uint16_t y,
+                          uint16_t width, uint16_t height,
+                          const uint16_t *pixels);
 
 /* Pure geometry helper used by both the driver and host-side boundary tests. */
 int TFT_ClipRect(uint16_t *x, uint16_t *y, uint16_t *width, uint16_t *height);
