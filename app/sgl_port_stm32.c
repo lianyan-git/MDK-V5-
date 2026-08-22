@@ -1,7 +1,6 @@
 /* sgl_port_stm32.c - SGL port for STM32F103C8T6 + ST7789 240x135 */
 #include <sgl.h>
 #include "bsp_tft_st7789.h"
-#include "bsp_encoder.h"
 #include <string.h>
 
 #define SGL_PANEL_WIDTH   240U

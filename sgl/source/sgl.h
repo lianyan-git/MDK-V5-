@@ -44,6 +44,7 @@
 #include "widgets/label/sgl_label.h"
 #include "widgets/label_ext/sgl_label_ext.h"
 #include "widgets/switch/sgl_switch.h"
+#include "widgets/led/sgl_led.h"
 #include "widgets/icon/sgl_icon.h"
 #include "widgets/img/sgl_img.h"
 #include "widgets/box/sgl_box.h"
