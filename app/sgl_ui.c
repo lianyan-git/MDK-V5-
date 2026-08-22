@@ -6,6 +6,7 @@
  * Generated: 22/8/2026 下午10:41:10
  * ============================================ */
 
+#ifndef BOOTLOADER_BUILD
 #include "sgl.h"
 
 /* USER CODE BEGIN includes */
@@ -480,3 +481,4 @@ void ui_init(void)
 /* USER CODE BEGIN functions */
 /* 用户可在此处添加自定义函数实现，重新生成代码时本区域内容会被保留 */
 /* USER CODE END functions */
+#endif /* BOOTLOADER_BUILD */

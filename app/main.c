@@ -1,3 +1,4 @@
+#ifndef BOOTLOADER_BUILD
 #include "system_config.h"
 #include "bsp_tft_st7789.h"
 #include "bsp_encoder.h"
@@ -39,3 +40,4 @@ int main(void)
         }
     }
 }
+#endif /* BOOTLOADER_BUILD */

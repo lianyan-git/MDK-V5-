@@ -49,6 +49,5 @@
 #include "widgets/img/sgl_img.h"
 #include "widgets/box/sgl_box.h"
 #include "widgets/bar/sgl_bar.h"
-#include "widgets/stepper/sgl_stepper.h"
 
 #endif // __SGL_H__

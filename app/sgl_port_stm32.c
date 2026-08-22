@@ -1,4 +1,5 @@
 /* sgl_port_stm32.c - SGL port for STM32F103C8T6 + ST7789 240x135 */
+#ifndef BOOTLOADER_BUILD
 #include <sgl.h>
 #include "bsp_tft_st7789.h"
 #include <string.h>
@@ -37,3 +38,4 @@ void sgl_port_tick(void)
 {
     sgl_tick_inc(1);
 }
+#endif /* BOOTLOADER_BUILD */
