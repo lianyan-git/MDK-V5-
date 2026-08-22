@@ -34,6 +34,10 @@ extern "C" {
 #include <sgl_anim.h>
 #include <sgl_core.h>
 
+/* 前向声明，避免循环包含时 sgl_anim_t 未定义 */
+struct sgl_anim;
+typedef struct sgl_anim sgl_anim_t;
+
 #if (CONFIG_SGL_BOOT_LOGO)
 /**
  * @brief to show the sgl logo after sgl init
