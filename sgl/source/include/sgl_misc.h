@@ -31,8 +31,8 @@ extern "C" {
 
 #include <stddef.h>
 #include <sgl_types.h>
-#include <sgl_core.h>
 #include <sgl_anim.h>
+#include <sgl_core.h>
 
 #if (CONFIG_SGL_BOOT_LOGO)
 /**

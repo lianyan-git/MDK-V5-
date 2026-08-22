@@ -3,6 +3,9 @@
 #include "bsp_tft_st7789.h"
 #include "bsp_encoder.h"
 #include "bsp_buzzer.h"
+#include "board.h"
+#include "system_time.h"
+#include "pin_config.h"
 #include "stm32f10x.h"
 #include <stdio.h>
 #include <string.h>
@@ -36,7 +39,6 @@ static void param_defaults(void)
     g_sys.params.motor_driver = MOTOR_DRIVER_A4988;
     g_sys.params.motor_current = 2;
     g_sys.params.motor_stealthchop = 0;
-    g_sys.version = 0;
     g_sys.weight_g = 0.0f;
     g_sys.current_screen = SCREEN_TIME_ADJUST;
     g_sys.selected_item = 0;
