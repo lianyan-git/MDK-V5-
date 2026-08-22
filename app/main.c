@@ -1,4 +1,3 @@
-#include "main.h"
 #include "system_config.h"
 #include "ui_manager.h"
 #include "bsp_tft_st7789.h"

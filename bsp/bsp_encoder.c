@@ -224,9 +224,11 @@ void Encoder_Process(void)
         break;
     }
 
-    default:
+default:
         break;
+    }
 }
+
 #endif /* BOOTLOADER_BUILD */
 
 

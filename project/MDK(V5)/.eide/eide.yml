@@ -5,6 +5,7 @@ deviceName: STM32F103C8
 packDir: .pack/Keil/STM32F1xx_DFP.2.3.0
 srcDirs:
   - ../../app
+  - ../../sgl
 virtualFolder:
   name: <virtual_root>
   files: []
@@ -177,6 +178,8 @@ targets:
         - ../../libraries/CMSIS/CM3/DeviceSupport/ST/STM32F10x
         - ../../libraries/STM32F10x_StdPeriph_Driver/inc
         - ../../module
+        - ../../sgl/source
+        - ../../sgl/source/include
         - .cmsis/include
         - RTE/_APP
       libList: []

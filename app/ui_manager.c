@@ -16,9 +16,6 @@ static uint16_t UI_ACCENT    = TFT_COLOR(0x19, 0x76, 0xD2);
 static uint16_t UI_ACCENT2   = TFT_COLOR(0xD3, 0x2F, 0x2F);
 static uint16_t UI_TEXT_DIM  = TFT_COLOR(0x60, 0x60, 0x60);
 static uint16_t UI_TEXT      = TFT_COLOR(0xFF, 0xFF, 0xFF);
-static uint16_t COLOR_YELLOW = TFT_COLOR(0xFF, 0xEB, 0x3B);
-static uint16_t COLOR_CYAN   = TFT_COLOR(0x00, 0xBC, 0xD4);
-static uint16_t COLOR_GREEN  = TFT_COLOR(0x4C, 0xAF, 0x50);
 
 #define BTN_H  18
 
